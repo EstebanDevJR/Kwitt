@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "name": "Tu Nombre",
+    "bio": "Desarrollador passionate creando soluciones innovadoras.",
+    "contact": {
+      "email": "tu@email.com",
+      "github": "tugithub",
+      "twitter": "tutwitter"
+    }
+  },
+  "projects": []
+}

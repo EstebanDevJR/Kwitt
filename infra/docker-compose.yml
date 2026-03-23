@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=/app/data/kwitt.db
+      - NODE_ENV=development
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPO=${GITHUB_REPO}
+    volumes:
+      - ./data:/app/data
+      - .:/app
+    working_dir: /app/backend
+    command: npm run dev
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    command: npm run dev
+
+  bot:
+    build:
+      context: ./bot
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - API_URL=http://backend:3001
+    volumes:
+      - .:/app
+    working_dir: /app/bot
+    command: npm run dev
+    depends_on:
+      - backend
