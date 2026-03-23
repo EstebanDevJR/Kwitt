@@ -231,9 +231,19 @@ async function sendMessage(chatId, text, parseMode = 'Markdown', replyMarkup) {
 function getMainKeyboard() {
   return {
     inline_keyboard: [
-      [{ text: '📊 Estado', callback_data: 'status' }, { text: '➕ Proyecto', callback_data: 'add_project_prompt' }],
-      [{ text: '🎨 Temas', callback_data: 'themes' }, { text: '💾 Versiones', callback_data: 'versions' }],
-      [{ text: '📈 Stats', callback_data: 'analytics' }, { text: '❓ Ayuda', callback_data: 'help' }]
+      [{ text: '📊 Estado', callback_data: 'status' }, { text: '✏️ Editar Perfil', callback_data: 'edit_profile' }, { text: '➕ Proyecto', callback_data: 'add_project_prompt' }],
+      [{ text: '🎨 Temas', callback_data: 'themes' }, { text: '🔄 Dark Mode', callback_data: 'toggle_darkmode' }, { text: '✨ Animaciones', callback_data: 'toggle_animations' }],
+      [{ text: '💾 Versiones', callback_data: 'versions' }, { text: '📈 Stats', callback_data: 'analytics' }, { text: '🔧 Doctor', callback_data: 'doctor' }],
+      [{ text: '❓ Ayuda', callback_data: 'help' }, { text: '📤 Export', callback_data: 'export_menu' }]
+    ]
+  };
+}
+
+function getExportKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: '📄 JSON', callback_data: 'export_json' }, { text: '📝 Markdown', callback_data: 'export_markdown' }, { text: '🌐 HTML', callback_data: 'export_html' }],
+      [{ text: '🔙 Volver', callback_data: 'back_main' }]
     ]
   };
 }
@@ -304,8 +314,10 @@ function mapIntentToInstruction(intent) {
   const mappings = {
     add_project: `Add a new project from GitHub ${target}. Extract name, description, tech stack. Update portfolio.`,
     update_bio: `Update portfolio bio to: "${data?.bio || target}".`,
+    update_name: `Update portfolio profile name to: "${target}".`,
     update_theme: `Update theme: ${data?.colors ? `colors: ${JSON.stringify(data.colors)}` : ''} ${data?.fonts ? `fonts: ${JSON.stringify(data.fonts)}` : ''}.`,
-    update_avatar: `Update avatar to: ${target}.`,
+    update_avatar: `Update profile avatar to: ${target}.`,
+    update_contact: `Update contact ${data?.tipo || 'info'} to: ${data?.valor || target}.`,
     toggle_animations: `${data?.value ? 'Enable' : 'Disable'} animations.`,
     toggle_darkmode: `${data?.value ? 'Enable' : 'Disable'} dark mode.`,
     delete_project: `Delete project "${target}" from portfolio.`,
@@ -325,28 +337,34 @@ function simpleMapIntentToInstruction(intent) {
       const project = { id: `project-${Date.now()}`, name: name.toLowerCase().replace(/[-_]/g, '-'), description: `Proyecto desde ${target}`, url: target, githubUrl: target, tags: ['github'], imageUrl: '', order: portfolio.projects.length, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       portfolio.projects.push(project);
       savePortfolio(portfolio);
-      return `Added "${project.name}"`;
-    case 'update_bio': portfolio.profile.bio = data?.bio || target; savePortfolio(portfolio); return `Bio updated`;
-    case 'update_theme': portfolio.theme = portfolio.theme || {}; if (data?.colors) portfolio.theme.colors = { ...portfolio.theme.colors, ...data.colors }; if (data?.fonts) portfolio.theme.fonts = { ...portfolio.theme.fonts, ...data.fonts }; savePortfolio(portfolio); return 'Theme updated';
-    case 'update_avatar': portfolio.profile.avatar = target; savePortfolio(portfolio); return 'Avatar updated';
-    case 'toggle_animations': portfolio.settings = portfolio.settings || {}; portfolio.settings.animations = data?.value ?? true; savePortfolio(portfolio); return `Animations ${portfolio.settings.animations ? 'enabled' : 'disabled'}`;
-    case 'toggle_darkmode': portfolio.settings = portfolio.settings || {}; portfolio.settings.darkMode = data?.value ?? true; savePortfolio(portfolio); return `Dark mode ${portfolio.settings.darkMode ? 'enabled' : 'disabled'}`;
+      return `✅ Proyecto "${project.name}" agregado`;
+    case 'update_bio': portfolio.profile.bio = data?.bio || target; savePortfolio(portfolio); return `✅ Bio actualizada`;
+    case 'update_name': portfolio.profile.name = target; savePortfolio(portfolio); return `✅ Nombre actualizado a "${target}"`;
+    case 'update_contact': 
+      if (!portfolio.profile.contact) portfolio.profile.contact = {};
+      portfolio.profile.contact[data?.tipo || 'email'] = data?.valor || target;
+      savePortfolio(portfolio);
+      return `✅ Contacto ${data?.tipo} actualizado`;
+    case 'update_theme': portfolio.theme = portfolio.theme || {}; if (data?.colors) portfolio.theme.colors = { ...portfolio.theme.colors, ...data.colors }; if (data?.fonts) portfolio.theme.fonts = { ...portfolio.theme.fonts, ...data.fonts }; savePortfolio(portfolio); return '✅ Tema actualizado';
+    case 'update_avatar': portfolio.profile.avatar = target; savePortfolio(portfolio); return '✅ Avatar actualizado';
+    case 'toggle_animations': portfolio.settings = portfolio.settings || {}; portfolio.settings.animations = data?.value ?? true; savePortfolio(portfolio); return `✅ Animaciones ${portfolio.settings.animations ? 'activadas' : 'desactivadas'}`;
+    case 'toggle_darkmode': portfolio.settings = portfolio.settings || {}; portfolio.settings.darkMode = data?.value ?? true; savePortfolio(portfolio); return `✅ Modo oscuro ${portfolio.settings.darkMode ? 'activado' : 'desactivado'}`;
     case 'delete_project':
       const nameToDelete = target.replace(/elimina|borra|proyecto/gi, '').trim().toLowerCase();
       const index = portfolio.projects.findIndex(p => p.name.toLowerCase().includes(nameToDelete) || nameToDelete.includes(p.name.toLowerCase()));
-      if (index !== -1) { const deleted = portfolio.projects.splice(index, 1)[0]; portfolio.projects.forEach((p, i) => { p.order = i; }); savePortfolio(portfolio); return `Deleted "${deleted.name}"`; }
-      return 'Project not found';
+      if (index !== -1) { const deleted = portfolio.projects.splice(index, 1)[0]; portfolio.projects.forEach((p, i) => { p.order = i; }); savePortfolio(portfolio); return `✅ Proyecto "${deleted.name}" eliminado`; }
+      return '❌ Proyecto no encontrado';
     case 'restore_version':
       const files = readdirSync(VERSIONS_DIR).filter(f => f.endsWith('.json')).sort().reverse();
-      if (files.length > 0) { const latest = JSON.parse(readFileSync(join(VERSIONS_DIR, files[0]), 'utf-8')); savePortfolio(latest.data, false); return 'Restored to latest' }
-      return 'No versions';
+      if (files.length > 0) { const latest = JSON.parse(readFileSync(join(VERSIONS_DIR, files[0]), 'utf-8')); savePortfolio(latest.data, false); return '✅ Restaurado a la última versión' }
+      return '❌ No hay versiones';
     case 'apply_template':
       const templateKey = data?.template;
-      if (PORTFOLIO_TEMPLATES[templateKey]) { portfolio.theme = PORTFOLIO_TEMPLATES[templateKey].theme; savePortfolio(portfolio); return `Applied template: ${PORTFOLIO_TEMPLATES[templateKey].name}`; }
-      return 'Template not found';
+      if (PORTFOLIO_TEMPLATES[templateKey]) { portfolio.theme = PORTFOLIO_TEMPLATES[templateKey].theme; savePortfolio(portfolio); return `✅ Tema "${PORTFOLIO_TEMPLATES[templateKey].name}" aplicado`; }
+      return '❌ Tema no encontrado';
     case 'export': return exportPortfolio(data?.format || 'json');
-    case 'import': return importPortfolio(target) ? 'Imported successfully' : 'Import failed';
-    default: return `Action ${action} not supported`;
+    case 'import': return importPortfolio(target) ? '✅ Importado correctamente' : '❌ Error al importar';
+    default: return `Acción ${action} no soportada`;
   }
 }
 
@@ -386,11 +404,17 @@ function simpleParseIntent(text) {
   if (lower.startsWith('preview') || lower.startsWith('previsualizar')) return { action: 'preview', target: text.replace(/^(preview|previsualizar)\s*/i, ''), data: {}, confidence: 0.9 };
   if (lower.startsWith('undo') || lower.startsWith('deshacer')) return { action: 'undo', target: '', data: {}, confidence: 0.9 };
   if (lower.startsWith('stats') || lower.startsWith('analytics')) return { action: 'get_analytics', target: '', data: {}, confidence: 0.9 };
-  if (lower.startsWith('export') || lower.startsWith('exporta')) {
-    const format = lower.includes('markdown') ? 'markdown' : lower.includes('html') ? 'html' : 'json';
-    return { action: 'export', target: '', data: { format }, confidence: 0.9 };
-  }
+  if (lower.startsWith('export') || lower.startsWith('exporta')) { const format = lower.includes('markdown') ? 'markdown' : lower.includes('html') ? 'html' : 'json'; return { action: 'export', target: '', data: { format }, confidence: 0.9 }; }
   if (lower.startsWith('import') || lower.startsWith('importa')) return { action: 'import', target: text.replace(/^(import|importa)\s*/i, ''), data: {}, confidence: 0.7 };
+  
+  // Profile edits - new patterns
+  if (lower.startsWith('me llamo ') || lower.startsWith('mi nombre es ')) return { action: 'update_name', target: text.replace(/^(me llamo|mi nombre es)\s*/i, ''), data: {}, confidence: 0.9 };
+  if (lower.startsWith('mi bio es ') || lower.startsWith('mi biography ')) return { action: 'update_bio', target: 'profile', data: { bio: text.replace(/^(mi bio es|mi biography)\s*/i, '') }, confidence: 0.9 };
+  if (lower.startsWith('mi foto ') || lower.startsWith('mi avatar ')) { const urlMatch = text.match(/(https?:\/\/[^\s]+)/); return { action: 'update_avatar', target: urlMatch?.[1] || '', confidence: 0.9 }; }
+  if (lower.startsWith('mi email ') || lower.startsWith('mi correo ')) return { action: 'update_contact', target: 'profile', data: { tipo: 'email', valor: text.replace(/^(mi email|mi correo)\s*/i, '') }, confidence: 0.9 };
+  if (lower.startsWith('mi github ') || lower.startsWith('mi github es ')) return { action: 'update_contact', target: 'profile', data: { tipo: 'github', valor: text.replace(/^(mi github|mi github es)\s*/i, '') }, confidence: 0.9 };
+  if (lower.startsWith('mi twitter ') || lower.startsWith('mi x ')) return { action: 'update_contact', target: 'profile', data: { tipo: 'twitter', valor: text.replace(/^(mi twitter|mi x)\s*/i, '') }, confidence: 0.9 };
+  
   if (lower.includes('agrega') || lower.includes('añade')) { const urlMatch = text.match(/(https?:\/\/[^\s]+)/); return { action: 'add_project', target: urlMatch?.[1] || '', data: {}, confidence: 0.8 }; }
   if (lower.includes('bio') || (lower.includes('actualiza') && lower.includes('mi'))) { const bio = text.replace(/actualiza mi bio a,?\s*/gi, '').replace(/actualiza mi bio/gi, '').replace(/^a,?\s*/gi, '').trim(); return { action: 'update_bio', target: 'profile', data: { bio }, confidence: 0.7 }; }
   if (lower.includes('tema')) { const template = Object.keys(PORTFOLIO_TEMPLATES).find(t => lower.includes(t)); return { action: 'apply_template', target: '', data: { template: template || 'minimal' }, confidence: 0.8 }; }
@@ -447,14 +471,29 @@ async function handleUndo(chatId) {
 async function handleGetStatus(chatId) {
   const portfolio = loadPortfolio();
   const versions = existsSync(VERSIONS_DIR) ? readdirSync(VERSIONS_DIR).filter(f => f.endsWith('.json')) : [];
-  const status = `📊 *Estado del Portfolio*
-
-*👤 Perfil:* ${portfolio.profile?.name || 'No configurado'}
-*📁 Proyectos:* ${portfolio.projects?.length || 0}
-*🎨 Dark:* ${portfolio.settings?.darkMode ? '✅' : '❌'} *✨ Anim:* ${portfolio.settings?.animations ? '✅' : '❌'}
-*💾 Respaldos:* ${versions.length}
-
-*🔧 Modo:* ${USE_LOCAL_MODE ? 'Local' : 'CLI'} *🌿 Rama:* ${GIT_BRANCH}`;
+  
+  const projectCount = portfolio.projects?.length || 0;
+  const hasProfile = portfolio.profile?.name && portfolio.profile.name !== 'Tu Nombre';
+  const hasBio = portfolio.profile?.bio && portfolio.profile.bio !== 'Descripción...';
+  
+  let status = `🎯 *Estado de tu Portfolio*\n\n`;
+  status += `━━━━━━━━━━━━━━━━━━\n\n`;
+  status += `👤 *Perfil:* ${hasProfile ? '✅ Configurado' : '⚠️ Por configurar'}\n`;
+  status += `   └ ${portfolio.profile?.name || 'Sin nombre'}\n`;
+  status += `   └ ${hasBio ? portfolio.profile.bio.substring(0, 40) + '...' : 'Sin bio'}\n\n`;
+  status += `📁 *Proyectos:* ${projectCount}\n`;
+  status += `🎨 *Dark Mode:* ${portfolio.settings?.darkMode ? '✅ Activo' : '❌ Inactivo'}\n`;
+  status += `✨ *Animaciones:* ${portfolio.settings?.animations ? '✅ Activas' : '❌ Inactivas'}\n`;
+  status += `💾 *Respaldos:* ${versions.length}\n`;
+  status += `🔧 *Modo:* ${USE_LOCAL_MODE ? 'Local' : 'CLI'}\n`;
+  status += `🌿 *Rama:* ${GIT_BRANCH}\n\n`;
+  status += `━━━━━━━━━━━━━━━━━━\n`;
+  status += `Usa los botones o escribe:\n`;
+  status += `• "agrega proyecto [url]"\n`;
+  status += `• "actualiza mi bio [texto]"\n`;
+  status += `• "tema dark" / "tema light"\n`;
+  status += `• "preview [comando]"`;
+  
   await sendMessage(chatId, status, 'Markdown', getMainKeyboard());
 }
 
@@ -494,13 +533,44 @@ async function handleRunDoctor(chatId) {
 }
 
 async function handleHelp(chatId) {
-  const helpText = `📖 *Comandos*
+  const helpText = `📖 *Guía de Comandos*
 
-*Portfolio:* proyecto, bio, estado
-*Temas:* tema minimal/developer/creative/dark/light
-*Sistema:* undo, doctor, versiones, restaurar
-*Datos:* stats, export json|markdown|html
-*Alias:* /s, /a, /d, /b`;
+━━━━━━━━━━━━━━━━━━━━━━
+
+*🎯 Gestión de Portfolio:*
+├ "agrega proyecto [url]"
+├ "actualiza mi bio [texto]"
+├ "elimina proyecto [nombre]"
+└ "estado"
+
+*🎨 Personalización:*
+├ "tema minimal/developer/creative/dark/light"
+├ "activa/desactiva modo oscuro"
+├ "activa/desactiva animaciones"
+└ "agrega mi foto [url]"
+
+*💾 Sistema:*
+├ "undo" - Deshacer último cambio
+├ "doctor" - Diagnóstico
+├ "versiones" - Ver respaldos
+├ "restaurar" - Restaurar versión
+└ "reparar" - Reparar config
+
+*📊 Datos:*
+├ "stats" - Ver estadísticas
+└ "export json/markdown/html"
+
+*⚡ Alias rápidas:*
+├ /s → Estado
+├ /a [url] → Agregar proyecto
+├ /b [texto] → Actualizar bio
+├ /d [nombre] → Eliminar proyecto
+└ /? → Esta ayuda
+
+*💡 Tips:*
+• "preview [comando]" → Previsualiza sin aplicar
+• Usa los botones del menú para acciones rápidas`;
+
   await sendMessage(chatId, helpText, 'Markdown', getMainKeyboard());
 }
 
@@ -516,23 +586,25 @@ async function handleRepair(chatId) {
 async function handleCallback(chatId, callbackData) {
   switch (callbackData) {
     case 'status': await handleGetStatus(chatId); break;
-    case 'add_project_prompt': await sendMessage(chatId, '📎 Envía: "agrega proyecto github.com/user/repo"'); break;
-    case 'themes': await sendMessage(chatId, '🎨 *Temas:*', 'Markdown', getThemesKeyboard()); break;
+    case 'edit_profile': await sendMessage(chatId, '✏️ *Editar Perfil*\n\nEnvía:\n• Tu nombre: "me llamo [nombre]"\n• Tu bio: "mi bio es [texto]"\n• Tu foto: "mi foto [url]"\n• Tu email: "mi email [email]"\n• Tu github: "mi github [username]"\n• Tu twitter: "mi twitter [username]"'); break;
+    case 'add_project_prompt': await sendMessage(chatId, '➕ *Agregar Proyecto*\n\nEnvía la URL de GitHub:\n\n"agrega proyecto github.com/user/repo"\n\nO usa: /a [url]'); break;
+    case 'themes': await sendMessage(chatId, '🎨 *Elige un Tema:*', 'Markdown', getThemesKeyboard()); break;
     case 'versions': await handleListVersions(chatId); break;
     case 'doctor': await handleRunDoctor(chatId); break;
     case 'help': await handleHelp(chatId); break;
     case 'analytics': await handleAnalytics(chatId); break;
     case 'toggle_darkmode': await handleCLICommand(chatId, { action: 'toggle_darkmode', target: '', data: { value: true }, confidence: 1.0 }, false); break;
     case 'toggle_animations': await handleCLICommand(chatId, { action: 'toggle_animations', target: '', data: { value: true }, confidence: 1.0 }, false); break;
-    case 'export_json': await sendMessage(chatId, `📄\`\`\`\n${exportPortfolio('json').slice(0, 4000)}\n\`\`\``, 'Markdown'); break;
-    case 'export_markdown': await sendMessage(chatId, exportPortfolio('markdown').slice(0, 4000)); break;
-    case 'export_html': await sendMessage(chatId, exportPortfolio('html').slice(0, 4000)); break;
+    case 'export_menu': await sendMessage(chatId, '📤 *Exportar Portfolio:*', 'Markdown', getExportKeyboard()); break;
+    case 'export_json': await sendMessage(chatId, `📄 *Portfolio JSON*\n\n\`\`\`json\n${exportPortfolio('json').slice(0, 3500)}\n\`\`\``, 'Markdown'); break;
+    case 'export_markdown': await sendMessage(chatId, `📝 *Portfolio Markdown*\n\n${exportPortfolio('markdown').slice(0, 4000)}`, 'Markdown'); break;
+    case 'export_html': await sendMessage(chatId, `🌐 *Portfolio HTML*\n\n${exportPortfolio('html').slice(0, 4000)}`); break;
     default:
       if (callbackData.startsWith('template_')) {
         const template = callbackData.replace('template_', '');
         await handleCLICommand(chatId, { action: 'apply_template', target: '', data: { template }, confidence: 1.0 }, false);
       }
-      if (callbackData === 'back_main') await sendMessage(chatId, '📊 *Menú:*', 'Markdown', getMainKeyboard());
+      if (callbackData === 'back_main') await sendMessage(chatId, '📊 *Menú Principal:*', 'Markdown', getMainKeyboard());
   }
   await fetch(`${BASE_URL}/answerCallbackQuery`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callback_query_id: '' }) });
 }
