@@ -2,9 +2,11 @@ import { NextResponse } from 'next/server';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://host.docker.internal:3001';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
-    const res = await fetch(`${API_URL}/api/portfolio`);
+    const res = await fetch(`${API_URL}/api/portfolio`, { cache: 'no-store' });
     const data = await res.json();
     return NextResponse.json(data);
   } catch (error) {
