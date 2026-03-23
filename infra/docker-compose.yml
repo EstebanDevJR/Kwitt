@@ -3,47 +3,68 @@ version: '3.8'
 services:
   backend:
     build:
-      context: .
-      dockerfile: infra/Dockerfile
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: kwitt-backend
     ports:
       - "3001:3001"
     environment:
       - DATABASE_URL=/app/data/kwitt.db
       - NODE_ENV=development
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
-      - GITHUB_REPO=${GITHUB_REPO}
+      - PORT=3001
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_REPO=${GITHUB_REPO:-}
     volumes:
-      - ./data:/app/data
-      - .:/app
-    working_dir: /app/backend
-    command: npm run dev
+      - ../portfolio.json:/app/portfolio.json
+      - backend-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   frontend:
     build:
-      context: ./frontend
+      context: ..
+      dockerfile: frontend/Dockerfile
+    container_name: kwitt-frontend
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     environment:
       - NODE_ENV=development
-    command: npm run dev
+      - NEXT_PUBLIC_API_URL=http://localhost:3001
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped
 
   bot:
     build:
-      context: ./bot
+      context: ..
+      dockerfile: bot/Dockerfile
+    container_name: kwitt-bot
     environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - API_URL=http://backend:3001
     volumes:
-      - .:/app
-    working_dir: /app/bot
-    command: npm run dev
+      - ../portfolio.json:/app/portfolio.json
     depends_on:
       - backend
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  backend-data:
+
+networks:
+  default:
+    name: kwitt-network

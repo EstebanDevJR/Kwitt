@@ -13,4 +13,4 @@ COPY . .
 
 EXPOSE 3001 3000
 
-CMD ["sh", "-c", "echo 'Kwitt setup complete'"]
+CMD ["sh", "-c", "echo 'Kwitt ready'"]
