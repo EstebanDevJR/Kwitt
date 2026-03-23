@@ -1,4 +1,4 @@
-import { Intent, AgentResult } from '../core/types.js';
+import { Intent, AgentResult } from '../core/types';
 import { telegramTool } from '../tools/telegram.js';
 import { llmTool } from '../tools/llm.js';
 
