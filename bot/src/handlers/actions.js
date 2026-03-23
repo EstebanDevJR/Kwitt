@@ -1,7 +1,8 @@
 import fetch from 'node-fetch';
-import { config, DEFAULT_PORTFOLIO } from '../config.js';
+import { config, DEFAULT_PORTFOLIO, FREE_MODELS, DEFAULT_MODEL } from '../config.js';
 import { portfolio, analytics, exportPortfolio } from '../data/portfolio.js';
-import { mainKeyboard, themesKeyboard, exportKeyboard, projectsKeyboard } from '../keyboards/index.js';
+import { mainKeyboard, themesKeyboard, exportKeyboard, projectsKeyboard, modelKeyboard } from '../keyboards/index.js';
+import { getModel, setModel } from '../cli/executor.js';
 
 const { baseUrl } = config.telegram;
 const DEFAULT_NAME = DEFAULT_PORTFOLIO.profile.name;
@@ -175,6 +176,23 @@ O usa: /a [url]`;
     await send(chatId, '✅ Configuracion reparada', 'Markdown', mainKeyboard());
   },
 
+  async modelMenu(chatId) {
+    const current = getModel(chatId);
+    const currentInfo = FREE_MODELS[current] || FREE_MODELS[DEFAULT_MODEL];
+    const msg = `🤖 *Seleccionar Modelo*\n\n`;
+    msg += `Actual: ${currentInfo.icon} ${currentInfo.name} (${currentInfo.provider})\n\n`;
+    msg += `Elige un modelo gratuito:`;
+    await send(chatId, msg, 'Markdown', modelKeyboard());
+  },
+
+  async setModel(chatId, modelKey) {
+    if (FREE_MODELS[modelKey]) {
+      setModel(chatId, modelKey);
+      const info = FREE_MODELS[modelKey];
+      await send(chatId, `✅ Modelo actualizado a: ${info.icon} ${info.name}`, 'Markdown', mainKeyboard());
+    }
+  },
+
   backMain(chatId) {
     this.status(chatId);
   },
@@ -194,6 +212,7 @@ O usa: /a [url]`;
       case 'export_html': await this.export(chatId, 'html'); break;
       case 'doctor': await this.doctor(chatId); break;
       case 'repair': await this.repair(chatId); break;
+      case 'model_menu': await this.modelMenu(chatId); break;
       case 'back_main': this.backMain(chatId); break;
       default:
         if (action.startsWith('template_')) {

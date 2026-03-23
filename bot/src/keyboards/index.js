@@ -1,4 +1,19 @@
-import { TEMPLATES } from '../config.js';
+import { TEMPLATES, FREE_MODELS } from '../config.js';
+
+export function modelKeyboard() {
+  const rows = [];
+  const entries = Object.entries(FREE_MODELS);
+  for (let i = 0; i < entries.length; i += 2) {
+    const row = [];
+    row.push({ text: `${entries[i][1].icon} ${entries[i][1].name}`, callback_data: `model_${entries[i][0]}` });
+    if (i + 1 < entries.length) {
+      row.push({ text: `${entries[i + 1][1].icon} ${entries[i + 1][1].name}`, callback_data: `model_${entries[i + 1][0]}` });
+    }
+    rows.push(row);
+  }
+  rows.push([{ text: '🔙 Atras', callback_data: 'back_main' }]);
+  return { inline_keyboard: rows };
+}
 
 export function mainKeyboard() {
   return {
@@ -6,7 +21,7 @@ export function mainKeyboard() {
       [{ text: '📊 Estado', callback_data: 'status' }, { text: '✏️ Editar', callback_data: 'edit_profile' }, { text: '➕ Proyecto', callback_data: 'add_project' }],
       [{ text: '🎨 Temas', callback_data: 'themes' }, { text: '🔄 Dark', callback_data: 'toggle_darkmode' }, { text: '✨ Anim', callback_data: 'toggle_animations' }],
       [{ text: '💾 Versiones', callback_data: 'list_versions' }, { text: '📈 Stats', callback_data: 'analytics' }, { text: '🔧 Doctor', callback_data: 'doctor' }],
-      [{ text: '❓ Ayuda', callback_data: 'help' }, { text: '📤 Export', callback_data: 'export_menu' }],
+      [{ text: '🤖 Modelo', callback_data: 'model_menu' }, { text: '❓ Ayuda', callback_data: 'help' }, { text: '📤 Export', callback_data: 'export_menu' }],
     ]
   };
 }

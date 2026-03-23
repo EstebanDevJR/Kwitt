@@ -1,10 +1,19 @@
 import { spawn, execSync } from 'child_process';
 import { existsSync } from 'fs';
-import { config } from '../config.js';
+import { config, DEFAULT_MODEL } from '../config.js';
 import { portfolio, analytics } from '../data/portfolio.js';
 
 const { runtime } = config;
 const RETRIES = 2;
+const selectedModel = new Map();
+
+export function getModel(chatId) {
+  return selectedModel.get(chatId) || DEFAULT_MODEL;
+}
+
+export function setModel(chatId, model) {
+  selectedModel.set(chatId, model);
+}
 
 function mapIntentToInstruction(intent) {
   const { action, target, data } = intent;
@@ -25,20 +34,23 @@ function mapIntentToInstruction(intent) {
 }
 
 export const executor = {
-  async runOpenCode(instruction, dryRun = false) {
+  async runOpenCode(instruction, dryRun = false, chatId = null) {
+    const modelKey = chatId ? getModel(chatId) : DEFAULT_MODEL;
+    const model = `opencode/${modelKey}`;
     return new Promise((resolve) => {
+      const modelFlag = `--model ${model}`;
       const cmd = dryRun 
-        ? `opencode run --dry-run "${instruction.replace(/"/g, '\\"')}"`
-        : `opencode run "${instruction.replace(/"/g, '\\"')}"`;
-      console.log(`[CLI] ${cmd}`);
+        ? `opencode run --dry-run ${modelFlag} "${instruction.replace(/"/g, '\\"')}"`
+        : `opencode run ${modelFlag} "${instruction.replace(/"/g, '\\"')}"`;
+      console.log(`[CLI] Model: ${model} | ${cmd}`);
       const child = spawn(cmd, { shell: true, env: { ...process.env } });
       let stdout = '';
       let stderr = '';
       child.stdout?.on('data', (data) => { stdout += data.toString(); });
       child.stderr?.on('data', (data) => { stderr += data.toString(); });
-      child.on('close', (code) => { resolve({ success: code === 0, stdout, stderr }); });
-      child.on('error', (error) => { resolve({ success: false, stdout, stderr: error.message }); });
-      setTimeout(() => { child.kill('SIGTERM'); resolve({ success: false, stdout, stderr: 'Timeout' }); }, runtime.cliTimeout);
+      child.on('close', (code) => { resolve({ success: code === 0, stdout, stderr, model }); });
+      child.on('error', (error) => { resolve({ success: false, stdout, stderr: error.message, model }); });
+      setTimeout(() => { child.kill('SIGTERM'); resolve({ success: false, stdout, stderr: 'Timeout', model }); }, runtime.cliTimeout);
     });
   },
 
@@ -71,15 +83,28 @@ export const executor = {
 
   async execute(chatId, intent, dryRun = false) {
     const instruction = mapIntentToInstruction(intent);
-    const modeText = dryRun ? '🔍 (PREVIEW)' : '🔄';
+    const model = getModel(chatId);
 
     if (runtime.localMode) {
       const result = portfolio.executeAction(intent);
-      return { success: true, result };
+      return { success: true, result, model };
     }
 
-    const result = await this.runWithRetry(instruction, dryRun);
+    const result = await this.runWithRetry(instruction, dryRun, chatId);
     return result;
+  },
+
+  async runWithRetry(instruction, dryRun = false, chatId = null) {
+    let lastError = '';
+    for (let i = 0; i <= RETRIES; i++) {
+      try {
+        const result = await this.runOpenCode(instruction, dryRun, chatId);
+        if (result.success || i === RETRIES) return { ...result, retries: i };
+        lastError = result.stderr;
+      } catch (e) { lastError = e.message; }
+      if (i < RETRIES) await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+    }
+    return { success: false, stdout: '', stderr: lastError, retries: RETRIES };
   },
 
   async executeAndTrack(chatId, intent, dryRun = false) {

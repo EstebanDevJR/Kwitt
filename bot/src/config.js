@@ -52,3 +52,13 @@ export const DEFAULT_PORTFOLIO = {
   settings: { animations: true, darkMode: true },
   customSections: [],
 };
+
+export const FREE_MODELS = {
+  'big-pickle': { name: 'Big Pickle', provider: 'Groq', icon: '🎯' },
+  'mimo-v2-omni-free': { name: 'MiMo V2 Omni Free', provider: 'Moonshot', icon: '🤖' },
+  'mimo-v2-pro-free': { name: 'MiMo V2 Pro Free', provider: 'Moonshot', icon: '🚀' },
+  'minimax-m2.5-free': { name: 'MiniMax M2.5 Free', provider: 'Minimax', icon: '🧠' },
+  'nemotron-3-super-free': { name: 'Nemotron 3 Super Free', provider: 'NVIDIA', icon: '⚡' },
+};
+
+export const DEFAULT_MODEL = process.env.OPENCODE_MODEL || 'minimax-m2.5-free';

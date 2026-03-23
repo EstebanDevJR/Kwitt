@@ -162,6 +162,12 @@ export const router = {
       return;
     }
 
+    if (callbackData.startsWith('model_')) {
+      const modelKey = callbackData.replace('model_', '');
+      await handlers.setModel(chatId, modelKey);
+      return;
+    }
+
     if (callbackData === 'back_main') {
       await handlers.status(chatId);
       return;
