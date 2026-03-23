@@ -18,8 +18,11 @@ function loadPortfolio() {
     return JSON.parse(readFileSync(portfolioPath, 'utf-8'));
   }
   return {
-    profile: { name: 'Tu Nombre', bio: 'Descripción...', contact: {} },
-    projects: []
+    profile: { name: 'Tu Nombre', bio: 'Descripción...', contact: {}, avatar: '' },
+    projects: [],
+    theme: { colors: {}, fonts: {}, layout: {} },
+    settings: { animations: true, darkMode: true },
+    customSections: []
   };
 }
 
@@ -56,10 +59,27 @@ async function parseIntent(message) {
         messages: [
           {
             role: 'system',
-            content: `Eres el agente de intención de Kwitt. Analiza el mensaje y responde SOLO con JSON:
+            content: `Eres el agente de intención de Kwitt. Analiza el mensaje del usuario para modificar el portfolio.
+
+El usuario puede pedir:
+- "agrega proyecto [url]" → action: "add_project", target: url
+- "actualiza mi bio [texto]" → action: "update_bio", target: "profile", data: {bio}
+- "cambia el color a azul" → action: "update_theme", data: {colors: {accent: '#0000ff'}}
+- "cambia la fuente a Roboto" → action: "update_theme", data: {fonts: {heading: 'Roboto'}}
+- "agrega mi foto [url]" → action: "update_avatar", target: url
+- "agrega sección [título]" → action: "add_section", data: {title, content}
+- "activa animaciones" → action: "toggle_animations", data: {value: true}
+- "activa modo oscuro" → action: "toggle_darkmode", data: {value: true}
+- "versión anterior" → action: "restore_version"
+- "lista versiones" → action: "list_versions"
+- "doctor" → action: "run_doctor"
+- "reparar" → action: "repair"
+- "estado" → action: "get_status"
+
+Responde SOLO con JSON:
 {
-  "action": "add_project|update_bio|update_contact|delete_project|reorder_projects|enhance_frontend|get_status|unknown",
-  "target": "objetivo o URL",
+  "action": "add_project|update_bio|update_theme|update_avatar|add_section|toggle_animations|toggle_darkmode|restore_version|list_versions|run_doctor|repair|get_status|delete_project|unknown",
+  "target": "",
   "data": {},
   "confidence": 0.0-1.0
 }`
@@ -91,43 +111,121 @@ async function parseIntent(message) {
 function simpleParseIntent(text) {
   const lower = text.toLowerCase();
   
-  if (lower.includes('agrega') || lower.includes('añade') || lower.includes('agregar')) {
+  if (lower.includes('agrega') || lower.includes('añade')) {
     const urlMatch = text.match(/(https?:\/\/[^\s]+)/);
     return { action: 'add_project', target: urlMatch?.[1] || '', data: {}, confidence: 0.8 };
   }
   
   if (lower.includes('bio') || (lower.includes('actualiza') && lower.includes('mi'))) {
-    let bio = text;
-    bio = bio.replace(/actualiza mi bio a,/gi, '').replace(/actualiza mi bio/gi, '').replace(/actualiza mi a,/gi, '').replace(/actualiza mi/gi, '').replace(/^a,?\s*/gi, '').trim();
-    return { action: 'update_bio', target: 'profile', data: { bio: bio || text }, confidence: 0.7 };
+    let bio = text.replace(/actualiza mi bio a,/gi, '').replace(/actualiza mi bio/gi, '').replace(/actualiza mi a,/gi, '').replace(/actualiza mi/gi, '').replace(/^a,?\s*/gi, '').trim();
+    return { action: 'update_bio', target: 'profile', data: { bio }, confidence: 0.7 };
   }
   
-  if (lower.includes('contacto') || lower.includes('contact')) {
-    return { action: 'update_contact', target: 'contact', data: {}, confidence: 0.6 };
+  if (lower.includes('color') || lower.includes('tema')) {
+    return { action: 'update_theme', data: { type: 'colors' }, confidence: 0.7 };
   }
   
-  if (lower.includes('elimina') || lower.includes('borra') || lower.includes('delete')) {
-    return { action: 'delete_project', target: text, data: {}, confidence: 0.7 };
+  if (lower.includes('fuente') || lower.includes('font') || lower.includes('letra')) {
+    return { action: 'update_theme', data: { type: 'fonts' }, confidence: 0.7 };
   }
   
-  if (lower.includes('estado') || lower.includes('status') || lower.includes('ver')) {
-    return { action: 'get_status', target: 'portfolio', data: {}, confidence: 0.8 };
+  if (lower.includes('imagen') || lower.includes('avatar') || lower.includes('foto')) {
+    const urlMatch = text.match(/(https?:\/\/[^\s]+)/);
+    return { action: 'update_avatar', target: urlMatch?.[1] || '', confidence: 0.7 };
   }
   
-  if (lower.includes('moderno') || lower.includes('animacion') || lower.includes('mejorar')) {
-    return { action: 'enhance_frontend', target: 'frontend', data: {}, confidence: 0.7 };
+  if (lower.includes('versión') || lower.includes('restore') || lower.includes('anterior')) {
+    return { action: 'restore_version', confidence: 0.8 };
+  }
+  
+  if (lower.includes('lista versiones') || lower.includes('versiones')) {
+    return { action: 'list_versions', confidence: 0.8 };
+  }
+  
+  if (lower.includes('doctor') || lower.includes('diagnóstico') || lower.includes('diagnostico')) {
+    return { action: 'run_doctor', confidence: 0.9 };
+  }
+  
+  if (lower.includes('reparar') || lower.includes('repair') || lower.includes('fix')) {
+    return { action: 'repair', confidence: 0.9 };
+  }
+  
+  if (lower.includes('estado') || lower.includes('status')) {
+    return { action: 'get_status', confidence: 0.8 };
+  }
+  
+  if (lower.includes('elimina') || lower.includes('borra')) {
+    return { action: 'delete_project', target: text, confidence: 0.7 };
+  }
+  
+  if (lower.includes('animacion') || lower.includes('animación')) {
+    return { action: 'toggle_animations', data: { value: lower.includes('activar') || lower.includes('activar') }, confidence: 0.7 };
+  }
+  
+  if (lower.includes('oscuro') || lower.includes('dark')) {
+    return { action: 'toggle_darkmode', data: { value: !lower.includes('desactivar') && !lower.includes('claro') }, confidence: 0.7 };
   }
   
   return { action: 'unknown', target: '', data: {}, confidence: 0 };
 }
 
-async function handleAddProject(chatId, githubUrl) {
-  if (!githubUrl.includes('github.com')) {
-    await sendMessage(chatId, '❌ Por favor proporciona una URL de GitHub válida');
-    return;
+function createVersion(data) {
+  const versionsDir = '/app/data/versions';
+  const fs = require('fs');
+  
+  if (!existsSync(versionsDir)) {
+    fs.mkdirSync(versionsDir, { recursive: true });
   }
   
-  await sendMessage(chatId, '🔄 Agregando proyecto...');
+  const timestamp = new Date().toISOString();
+  const versionFile = join(versionsDir, `${timestamp}.json`);
+  
+  fs.writeFileSync(versionFile, JSON.stringify({
+    timestamp,
+    data,
+    type: 'auto'
+  }, null, 2));
+}
+
+function getVersions() {
+  const versionsDir = '/app/data/versions';
+  const fs = require('fs');
+  
+  if (!existsSync(versionsDir)) {
+    return [];
+  }
+  
+  const files = fs.readdirSync(versionsDir).filter(f => f.endsWith('.json'));
+  return files.map(f => ({
+    file: f,
+    timestamp: f.replace('.json', '')
+  })).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+}
+
+function restoreVersion(timestamp) {
+  const versionsDir = '/app/data/versions';
+  const fs = require('fs');
+  
+  const versionFile = join(versionsDir, `${timestamp}.json`);
+  
+  if (!existsSync(versionFile)) {
+    throw new Error('Versión no encontrada');
+  }
+  
+  const version = JSON.parse(fs.readFileSync(versionFile, 'utf-8'));
+  
+  const current = loadPortfolio();
+  createVersion({ ...current, _restoredFrom: timestamp });
+  
+  savePortfolio(version.data);
+  return version.data;
+}
+
+async function handleAddProject(chatId, githubUrl) {
+  if (!githubUrl.includes('github.com')) {
+    await sendMessage(chatId, '❌ URL de GitHub inválida');
+    return;
+  }
   
   const portfolio = loadPortfolio();
   const urlParts = githubUrl.replace('https://', '').replace('http://', '').split('/').filter(Boolean);
@@ -140,65 +238,209 @@ async function handleAddProject(chatId, githubUrl) {
     url: githubUrl,
     githubUrl: githubUrl,
     tags: ['github', 'project'],
+    imageUrl: '',
     order: portfolio.projects.length,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
   
+  createVersion(portfolio);
   portfolio.projects.push(project);
   savePortfolio(portfolio);
   
-  await sendMessage(chatId, `✅ Proyecto "${project.name}" agregado\n\n` +
-    `📝 *Detalles:*\n` +
-    `- Nombre: ${project.name}\n` +
-    `- URL: ${project.url}\n` +
-    `- Tags: ${project.tags.join(', ')}`);
+  await sendMessage(chatId, `✅ Proyecto "${project.name}" agregado`);
 }
 
 async function handleUpdateBio(chatId, bio) {
   const portfolio = loadPortfolio();
+  createVersion(portfolio);
   portfolio.profile.bio = bio;
   savePortfolio(portfolio);
+  await sendMessage(chatId, `✅ Bio actualizada:\n\n"${bio}"`);
+}
+
+async function handleUpdateTheme(chatId, type, values) {
+  const portfolio = loadPortfolio();
+  createVersion(portfolio);
   
-  await sendMessage(chatId, `✅ Bio actualizada\n\n📝 "${bio}"`);
+  portfolio.theme = portfolio.theme || {};
+  
+  if (type === 'colors') {
+    portfolio.theme.colors = { ...portfolio.theme.colors, ...values };
+  } else if (type === 'fonts') {
+    portfolio.theme.fonts = { ...portfolio.theme.fonts, ...values };
+  }
+  
+  savePortfolio(portfolio);
+  await sendMessage(chatId, `✅ Tema actualizado (${type})`);
+}
+
+async function handleUpdateAvatar(chatId, imageUrl) {
+  const portfolio = loadPortfolio();
+  createVersion(portfolio);
+  portfolio.profile.avatar = imageUrl;
+  savePortfolio(portfolio);
+  await sendMessage(chatId, `✅ Avatar actualizado`);
+}
+
+async function handleToggleAnimations(chatId, enable) {
+  const portfolio = loadPortfolio();
+  createVersion(portfolio);
+  portfolio.settings = portfolio.settings || {};
+  portfolio.settings.animations = enable;
+  savePortfolio(portfolio);
+  await sendMessage(chatId, `✅ Animaciones ${enable ? 'activadas' : 'desactivadas'}`);
+}
+
+async function handleToggleDarkMode(chatId, enable) {
+  const portfolio = loadPortfolio();
+  createVersion(portfolio);
+  portfolio.settings = portfolio.settings || {};
+  portfolio.settings.darkMode = enable;
+  savePortfolio(portfolio);
+  await sendMessage(chatId, `✅ Modo oscuro ${enable ? 'activado' : 'desactivado'}`);
+}
+
+async function handleDeleteProject(chatId, projectName) {
+  const portfolio = loadPortfolio();
+  const nameToDelete = projectName.replace(/elimina|borra|proyecto/gi, '').trim().toLowerCase();
+  
+  const index = portfolio.projects.findIndex(p => 
+    p.name.toLowerCase().includes(nameToDelete) || 
+    nameToDelete.includes(p.name.toLowerCase())
+  );
+  
+  if (index === -1) {
+    await sendMessage(chatId, `❌ Proyecto "${nameToDelete}" no encontrado`);
+    return;
+  }
+  
+  createVersion(portfolio);
+  const deleted = portfolio.projects.splice(index, 1)[0];
+  portfolio.projects.forEach((p, i) => p.order = i);
+  savePortfolio(portfolio);
+  
+  await sendMessage(chatId, `✅ Proyecto "${deleted.name}" eliminado`);
+}
+
+async function handleRestoreVersion(chatId) {
+  const versions = getVersions();
+  
+  if (versions.length === 0) {
+    await sendMessage(chatId, '❌ No hay versiones disponibles');
+    return;
+  }
+  
+  const latest = versions[0];
+  const restored = restoreVersion(latest.timestamp);
+  
+  await sendMessage(chatId, `✅ Restaurado a la versión anterior\n\n📅 ${new Date(latest.timestamp).toLocaleString()}`);
+}
+
+async function handleListVersions(chatId) {
+  const versions = getVersions();
+  
+  if (versions.length === 0) {
+    await sendMessage(chatId, '❌ No hay versiones guardadas');
+    return;
+  }
+  
+  const list = versions.slice(0, 10).map((v, i) => 
+    `${i + 1}. ${new Date(v.timestamp).toLocaleString()}`
+  ).join('\n');
+  
+  await sendMessage(chatId, `📜 *Últimas versiones:*\n\n${list}\n\nUsa "restaurar" para revertir`);
+}
+
+async function handleRunDoctor(chatId) {
+  const portfolio = loadPortfolio();
+  const versions = getVersions();
+  
+  let issues = [];
+  
+  if (!portfolio.profile?.name || portfolio.profile.name === 'Tu Nombre') {
+    issues.push('⚠️ Perfil no configurado');
+  }
+  
+  if (versions.length === 0) {
+    issues.push('⚠️ Sin backups de seguridad');
+  }
+  
+  if (!portfolio.settings?.animations) {
+    issues.push('ℹ️ Animaciones desactivadas');
+  }
+  
+  if (issues.length === 0) {
+    await sendMessage(chatId, '✅ *Diagnóstico del Sistema*\n\nTodo parece funcionar correctamente.\n\n📁 Proyectos: ' + portfolio.projects.length);
+  } else {
+    await sendMessage(chatId, '🔍 *Diagnóstico:*\n\n' + issues.join('\n'));
+  }
+}
+
+async function handleRepair(chatId) {
+  const portfolio = loadPortfolio();
+  createVersion(portfolio);
+  
+  if (!portfolio.settings) {
+    portfolio.settings = { animations: true, darkMode: true };
+  }
+  
+  if (!portfolio.theme) {
+    portfolio.theme = { colors: {}, fonts: {}, layout: {} };
+  }
+  
+  savePortfolio(portfolio);
+  await sendMessage(chatId, '✅ *Reparación completada*\n\nConfiguración restaurada');
 }
 
 async function handleGetStatus(chatId) {
   const portfolio = loadPortfolio();
+  const versions = getVersions();
   
-  const projectsList = portfolio.projects.length > 0 
-    ? portfolio.projects.map((p, i) => `${i + 1}. ${p.name}`).join('\n')
-    : 'No hay proyectos';
-  
-  const status = `📊 *Estado del Portfolio*\n\n` +
-    `*👤 Nombre:* ${portfolio.profile.name}\n` +
-    `*📝 Bio:* ${portfolio.profile.bio}\n\n` +
-    `*📁 Proyectos (${portfolio.projects.length}):*\n${projectsList}\n\n` +
-    `*📬 Contacto:*\n` +
-    `${portfolio.profile.contact.email ? `✉️ ${portfolio.profile.contact.email}\n` : ''}` +
-    `${portfolio.profile.contact.github ? `🐙 ${portfolio.profile.contact.github}\n` : ''}` +
-    `${portfolio.profile.contact.twitter ? `🐦 @${portfolio.profile.contact.twitter}\n` : ''}`;
+  const status = `📊 *Estado del Portfolio*
+
+*👤 Perfil:*
+- Nombre: ${portfolio.profile?.name || 'No configurado'}
+- Bio: ${portfolio.profile?.bio?.substring(0, 50) || 'No configurada'}...
+
+*📁 Proyectos:* ${portfolio.projects?.length || 0}
+
+*🎨 Tema:*
+- Modo oscuro: ${portfolio.settings?.darkMode ? '✅' : '❌'}
+- Animaciones: ${portfolio.settings?.animations ? '✅' : '❌'}
+
+*💾 Respaldos:* ${versions.length}
+
+Usa los comandos para hacer cambios.`;
   
   await sendMessage(chatId, status);
 }
 
 async function handleHelp(chatId) {
-  const helpText = `📖 *Guía de Comandos*
+  const helpText = `📖 *Comandos disponibles*
 
-*Agregar Proyecto:*
-"agrega proyecto https://github.com/user/repo"
+*Gestión de Portfolio:*
+• "agrega proyecto [url]" - Añadir proyecto
+• "actualiza mi bio [texto]" - Actualizar bio
+• "elimina proyecto [nombre]" - Eliminar proyecto
+• "estado" - Ver estado completo
 
-*Actualizar Bio:*
-"actualiza mi bio [tu nueva bio]"
+*Personalización:*
+• "cambia el color a [color]" - Cambiar color
+• "cambia la fuente a [fuente]" - Cambiar fuente
+• "agrega mi foto [url]" - Actualizar avatar
+• "activa animaciones" / "desactiva"
+• "activa modo oscuro"
 
-*Ver Estado:*
-"estado" o "muéstrame mi portfolio"
+*Sistema:*
+• "doctor" - Diagnóstico del sistema
+• "reparar" - Reparar configuración
+• "lista versiones" - Ver backups
+• "restaurar" - Restaurar versión anterior
 
-*Eliminar Proyecto:*
-"elimina [nombre del proyecto]"
-
-*Mejorar Frontend:*
-"hazlo más moderno" o "añade animaciones"`;
+*Versiones:*
+• "versión anterior" - Restaurar backup
+• "lista versiones" - Ver historial`;
   
   await sendMessage(chatId, helpText);
 }
@@ -212,12 +454,7 @@ async function handleMessage(chatId, text) {
   console.log(`📩 Mensaje de ${chatId}: ${text}`);
   
   if (text.startsWith('/start')) {
-    const portfolio = loadPortfolio();
-    await sendMessage(chatId, `👋 *¡Hola! Soy Kwitt* ✨\n\n` +
-      `Tu asistente de portfolio personal.\n\n` +
-      `*👤 Perfil:* ${portfolio.profile.name}\n` +
-      `*📁 Proyectos:* ${portfolio.projects.length}\n\n` +
-      `Envía "/ayuda" para ver comandos disponibles.`);
+    await handleGetStatus(chatId);
     return;
   }
   
@@ -231,13 +468,18 @@ async function handleMessage(chatId, text) {
     return;
   }
   
-  if (text.startsWith('/bio')) {
-    const bio = text.replace('/bio', '').trim();
-    if (bio) {
-      await handleUpdateBio(chatId, bio);
-    } else {
-      await sendMessage(chatId, 'Usa: /bio [tu nueva bio]');
-    }
+  if (text.startsWith('/doctor')) {
+    await handleRunDoctor(chatId);
+    return;
+  }
+  
+  if (text.startsWith('/reparar')) {
+    await handleRepair(chatId);
+    return;
+  }
+  
+  if (text.startsWith('/versiones')) {
+    await handleListVersions(chatId);
     return;
   }
   
@@ -245,10 +487,7 @@ async function handleMessage(chatId, text) {
     const intent = await parseIntent(text);
     
     if (!intent.action || intent.action === 'unknown' || intent.confidence < 0.5) {
-      await sendMessage(chatId, 
-        '🤔 No pude entender tu mensaje.\n\n' +
-        'Usa "/ayuda" para ver los comandos disponibles.'
-      );
+      await sendMessage(chatId, '🤔 No entendí. Usa "/ayuda" para ver comandos.');
       return;
     }
     
@@ -258,8 +497,44 @@ async function handleMessage(chatId, text) {
         break;
         
       case 'update_bio':
-        const bio = intent.data?.bio || intent.target;
+        const bio = intent.data?.bio || text;
         await handleUpdateBio(chatId, bio);
+        break;
+        
+      case 'update_theme':
+        await handleUpdateTheme(chatId, intent.data?.type || 'colors', intent.data || {});
+        break;
+        
+      case 'update_avatar':
+        await handleUpdateAvatar(chatId, intent.target);
+        break;
+        
+      case 'toggle_animations':
+        await handleToggleAnimations(chatId, intent.data?.value ?? true);
+        break;
+        
+      case 'toggle_darkmode':
+        await handleToggleDarkMode(chatId, intent.data?.value ?? true);
+        break;
+        
+      case 'delete_project':
+        await handleDeleteProject(chatId, text);
+        break;
+        
+      case 'restore_version':
+        await handleRestoreVersion(chatId);
+        break;
+        
+      case 'list_versions':
+        await handleListVersions(chatId);
+        break;
+        
+      case 'run_doctor':
+        await handleRunDoctor(chatId);
+        break;
+        
+      case 'repair':
+        await handleRepair(chatId);
         break;
         
       case 'get_status':
@@ -267,20 +542,19 @@ async function handleMessage(chatId, text) {
         break;
         
       default:
-        await sendMessage(chatId, '🤔 Acción no reconocida. Usa /ayuda');
+        await sendMessage(chatId, '🤔 Acción no reconocida. Usa "/ayuda"');
     }
     
   } catch (error) {
     console.error('Error:', error);
-    await sendMessage(chatId, '❌ Hubo un error procesando tu mensaje');
+    await sendMessage(chatId, '❌ Error: ' + error.message);
   }
 }
 
 async function pollMessages() {
   let offset = 0;
   
-  console.log('🤖 Kwitt Bot iniciado...');
-  console.log(`🔗 API URL: ${API_URL}`);
+  console.log('🤖 Kwitt Bot iniciado con versionado...');
   
   while (true) {
     try {
