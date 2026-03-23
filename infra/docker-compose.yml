@@ -3,23 +3,19 @@ version: '3.8'
 services:
   backend:
     build:
-      context: ..
-      dockerfile: backend/Dockerfile
+      context: ../backend
+      dockerfile: Dockerfile
     container_name: kwitt-backend
     ports:
       - "3001:3001"
     environment:
-      - DATABASE_URL=/app/data/kwitt.db
       - NODE_ENV=development
       - PORT=3001
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
-      - GITHUB_REPO=${GITHUB_REPO:-}
     volumes:
       - ../portfolio.json:/app/portfolio.json
-      - backend-data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
@@ -29,25 +25,20 @@ services:
 
   frontend:
     build:
-      context: ..
-      dockerfile: frontend/Dockerfile
+      context: ../frontend
+      dockerfile: Dockerfile
     container_name: kwitt-frontend
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=development
       - NEXT_PUBLIC_API_URL=http://localhost:3001
-    volumes:
-      - ../frontend:/app
-      - /app/node_modules
-    depends_on:
-      - backend
     restart: unless-stopped
 
   bot:
     build:
-      context: ..
-      dockerfile: bot/Dockerfile
+      context: ../bot
+      dockerfile: Dockerfile
     container_name: kwitt-bot
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
@@ -59,11 +50,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-volumes:
-  backend-data:
 
 networks:
   default:

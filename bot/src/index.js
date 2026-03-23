@@ -23,11 +23,11 @@ function loadPortfolio() {
   };
 }
 
-function savePortfolio(data: any) {
+function savePortfolio(data) {
   writeFileSync(portfolioPath, JSON.stringify(data, null, 2));
 }
 
-async function sendMessage(chatId: number, text: string, parseMode = 'Markdown') {
+async function sendMessage(chatId, text, parseMode = 'Markdown') {
   try {
     await fetch(`${BASE_URL}/sendMessage`, {
       method: 'POST',
@@ -39,23 +39,7 @@ async function sendMessage(chatId: number, text: string, parseMode = 'Markdown')
   }
 }
 
-async function sendKeyboard(chatId: number, text: string, keyboard: any) {
-  try {
-    await fetch(`${BASE_URL}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        reply_markup: keyboard
-      })
-    });
-  } catch (e) {
-    console.error('Error sending keyboard:', e);
-  }
-}
-
-async function parseIntent(message: string) {
+async function parseIntent(message) {
   if (!OPENAI_API_KEY) {
     return simpleParseIntent(message);
   }
@@ -104,7 +88,7 @@ async function parseIntent(message: string) {
   return simpleParseIntent(message);
 }
 
-function simpleParseIntent(text: string): any {
+function simpleParseIntent(text) {
   const lower = text.toLowerCase();
   
   if (lower.includes('agrega') || lower.includes('añade') || lower.includes('agregar')) {
@@ -136,7 +120,7 @@ function simpleParseIntent(text: string): any {
   return { action: 'unknown', target: '', data: {}, confidence: 0 };
 }
 
-async function handleAddProject(chatId: number, githubUrl: string) {
+async function handleAddProject(chatId, githubUrl) {
   if (!githubUrl.includes('github.com')) {
     await sendMessage(chatId, '❌ Por favor proporciona una URL de GitHub válida');
     return;
@@ -170,7 +154,7 @@ async function handleAddProject(chatId: number, githubUrl: string) {
     `- Tags: ${project.tags.join(', ')}`);
 }
 
-async function handleUpdateBio(chatId: number, bio: string) {
+async function handleUpdateBio(chatId, bio) {
   const portfolio = loadPortfolio();
   portfolio.profile.bio = bio;
   savePortfolio(portfolio);
@@ -178,46 +162,7 @@ async function handleUpdateBio(chatId: number, bio: string) {
   await sendMessage(chatId, `✅ Bio actualizada\n\n📝 "${bio}"`);
 }
 
-async function handleUpdateContact(chatId: number, contactInfo: string) {
-  const portfolio = loadPortfolio();
-  
-  const emailMatch = contactInfo.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
-  const twitterMatch = contactInfo.match(/@?(\w+)/);
-  
-  if (emailMatch) {
-    portfolio.profile.contact.email = emailMatch[1];
-  }
-  if (twitterMatch) {
-    portfolio.profile.contact.twitter = twitterMatch[1];
-  }
-  
-  savePortfolio(portfolio);
-  await sendMessage(chatId, '✅ Contacto actualizado');
-}
-
-async function handleDeleteProject(chatId: number, projectName: string) {
-  const portfolio = loadPortfolio();
-  const nameToDelete = projectName.replace(/elimina|borra|proyecto/gi, '').trim().toLowerCase();
-  
-  const index = portfolio.projects.findIndex(p => 
-    p.name.toLowerCase().includes(nameToDelete) || 
-    nameToDelete.includes(p.name.toLowerCase())
-  );
-  
-  if (index === -1) {
-    await sendMessage(chatId, `❌ No encontré el proyecto "${nameToDelete}"`);
-    return;
-  }
-  
-  const deleted = portfolio.projects.splice(index, 1)[0];
-  
-  portfolio.projects.forEach((p, i) => p.order = i);
-  savePortfolio(portfolio);
-  
-  await sendMessage(chatId, `✅ Proyecto "${deleted.name}" eliminado`);
-}
-
-async function handleGetStatus(chatId: number) {
+async function handleGetStatus(chatId) {
   const portfolio = loadPortfolio();
   
   const projectsList = portfolio.projects.length > 0 
@@ -236,32 +181,7 @@ async function handleGetStatus(chatId: number) {
   await sendMessage(chatId, status);
 }
 
-async function handleEnhance(chatId: number) {
-  await sendMessage(chatId, '🎨 Mejorando frontend con animaciones GSAP...');
-  
-  const frontendPath = join(__dirname, '../../frontend/src/app/page.tsx');
-  
-  if (existsSync(frontendPath)) {
-    let content = readFileSync(frontendPath, 'utf-8');
-    
-    if (!content.includes('gsap')) {
-      const enhanced = content.replace(
-        "import { useEffect, useRef, useState } from 'react';",
-        "import { useEffect, useRef, useState } from 'react';\nimport gsap from 'gsap';\nimport { ScrollTrigger } from 'gsap/ScrollTrigger';"
-      ).replace(
-        'useEffect(() => {',
-        `useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);`
-      );
-      
-      writeFileSync(frontendPath, enhanced);
-    }
-  }
-  
-  await sendMessage(chatId, '✨ Frontend mejorado con animaciones GSAP');
-}
-
-async function handleHelp(chatId: number) {
+async function handleHelp(chatId) {
   const helpText = `📖 *Guía de Comandos*
 
 *Agregar Proyecto:*
@@ -277,15 +197,12 @@ async function handleHelp(chatId: number) {
 "elimina [nombre del proyecto]"
 
 *Mejorar Frontend:*
-"hazlo más moderno" o "añade animaciones"
-
-*Contacto:*
-"mi email es [email]" o "mi twitter es @user"`;
+"hazlo más moderno" o "añade animaciones"`;
   
   await sendMessage(chatId, helpText);
 }
 
-async function handleMessage(chatId: number, text: string) {
+async function handleMessage(chatId, text) {
   if (AUTHORIZED_CHAT_ID && chatId !== parseInt(AUTHORIZED_CHAT_ID)) {
     await sendMessage(chatId, '⛔ No autorizado');
     return;
@@ -325,7 +242,6 @@ async function handleMessage(chatId: number, text: string) {
   
   try {
     const intent = await parseIntent(text);
-    console.log('🎯 Intent:', intent);
     
     if (!intent.action || intent.action === 'unknown' || intent.confidence < 0.5) {
       await sendMessage(chatId, 
@@ -345,20 +261,8 @@ async function handleMessage(chatId: number, text: string) {
         await handleUpdateBio(chatId, bio);
         break;
         
-      case 'update_contact':
-        await handleUpdateContact(chatId, text);
-        break;
-        
-      case 'delete_project':
-        await handleDeleteProject(chatId, text);
-        break;
-        
       case 'get_status':
         await handleGetStatus(chatId);
-        break;
-        
-      case 'enhance_frontend':
-        await handleEnhance(chatId);
         break;
         
       default:

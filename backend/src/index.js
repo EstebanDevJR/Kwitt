@@ -14,10 +14,8 @@ await fastify.register(cors, {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 });
 
-const DB_PATH = process.env.DATABASE_URL || './kwitt.db';
-
 function getPortfolioPath() {
-  return join(__dirname, '../portfolio.json');
+  return join(__dirname, '../../portfolio.json');
 }
 
 function loadPortfolio() {
@@ -42,40 +40,36 @@ function loadPortfolio() {
   };
 }
 
-function savePortfolio(data: any) {
+function savePortfolio(data) {
   const portfolioPath = getPortfolioPath();
   writeFileSync(portfolioPath, JSON.stringify(data, null, 2));
 }
 
-// ==================== RUTAS ====================
-
 // Health check
-fastify.get('/health', async (request, reply) => {
+fastify.get('/health', async () => {
   return { status: 'ok', timestamp: new Date().toISOString() };
 });
 
-// GET /api/portfolio - Obtener portfolio completo
-fastify.get('/api/portfolio', async (request, reply) => {
-  const portfolio = loadPortfolio();
-  return portfolio;
+// GET /api/portfolio
+fastify.get('/api/portfolio', async () => {
+  return loadPortfolio();
 });
 
-// GET /api/portfolio/profile - Obtener perfil
-fastify.get('/api/portfolio/profile', async (request, reply) => {
-  const portfolio = loadPortfolio();
-  return portfolio.profile;
+// GET /api/portfolio/profile
+fastify.get('/api/portfolio/profile', async () => {
+  return loadPortfolio().profile;
 });
 
-// PUT /api/portfolio/profile - Actualizar perfil
-fastify.put('/api/portfolio/profile', async (request: any, reply) => {
+// PUT /api/portfolio/profile
+fastify.put('/api/portfolio/profile', async (request, reply) => {
   const portfolio = loadPortfolio();
   portfolio.profile = { ...portfolio.profile, ...request.body };
   savePortfolio(portfolio);
   return portfolio.profile;
 });
 
-// PATCH /api/portfolio/profile - Actualizar parcialmente
-fastify.patch('/api/portfolio/profile', async (request: any, reply) => {
+// PATCH /api/portfolio/profile
+fastify.patch('/api/portfolio/profile', async (request, reply) => {
   const portfolio = loadPortfolio();
   
   if (request.body.name) portfolio.profile.name = request.body.name;
@@ -88,17 +82,16 @@ fastify.patch('/api/portfolio/profile', async (request: any, reply) => {
   return portfolio.profile;
 });
 
-// GET /api/portfolio/projects - Listar proyectos
-fastify.get('/api/portfolio/projects', async (request, reply) => {
-  const portfolio = loadPortfolio();
-  return portfolio.projects;
+// GET /api/portfolio/projects
+fastify.get('/api/portfolio/projects', async () => {
+  return loadPortfolio().projects;
 });
 
-// GET /api/portfolio/projects/:id - Obtener proyecto específico
-fastify.get('/api/portfolio/projects/:id', async (request: any, reply) => {
+// GET /api/portfolio/projects/:id
+fastify.get('/api/portfolio/projects/:id', async (request, reply) => {
   const portfolio = loadPortfolio();
   const { id } = request.params;
-  const project = portfolio.projects.find((p: any) => p.id === id);
+  const project = portfolio.projects.find(p => p.id === id);
   
   if (!project) {
     return reply.code(404).send({ error: 'Proyecto no encontrado' });
@@ -107,8 +100,8 @@ fastify.get('/api/portfolio/projects/:id', async (request: any, reply) => {
   return project;
 });
 
-// POST /api/portfolio/projects - Crear proyecto
-fastify.post('/api/portfolio/projects', async (request: any, reply) => {
+// POST /api/portfolio/projects
+fastify.post('/api/portfolio/projects', async (request, reply) => {
   const portfolio = loadPortfolio();
   const project = {
     id: `project-${Date.now()}`,
@@ -122,11 +115,11 @@ fastify.post('/api/portfolio/projects', async (request: any, reply) => {
   return project;
 });
 
-// PUT /api/portfolio/projects/:id - Actualizar proyecto
-fastify.put('/api/portfolio/projects/:id', async (request: any, reply) => {
+// PUT /api/portfolio/projects/:id
+fastify.put('/api/portfolio/projects/:id', async (request, reply) => {
   const portfolio = loadPortfolio();
   const { id } = request.params;
-  const index = portfolio.projects.findIndex((p: any) => p.id === id);
+  const index = portfolio.projects.findIndex(p => p.id === id);
   
   if (index === -1) {
     return reply.code(404).send({ error: 'Proyecto no encontrado' });
@@ -142,11 +135,11 @@ fastify.put('/api/portfolio/projects/:id', async (request: any, reply) => {
   return portfolio.projects[index];
 });
 
-// DELETE /api/portfolio/projects/:id - Eliminar proyecto
-fastify.delete('/api/portfolio/projects/:id', async (request: any, reply) => {
+// DELETE /api/portfolio/projects/:id
+fastify.delete('/api/portfolio/projects/:id', async (request, reply) => {
   const portfolio = loadPortfolio();
   const { id } = request.params;
-  const index = portfolio.projects.findIndex((p: any) => p.id === id);
+  const index = portfolio.projects.findIndex(p => p.id === id);
   
   if (index === -1) {
     return reply.code(404).send({ error: 'Proyecto no encontrado' });
@@ -154,7 +147,7 @@ fastify.delete('/api/portfolio/projects/:id', async (request: any, reply) => {
   
   const deleted = portfolio.projects.splice(index, 1)[0];
   
-  portfolio.projects.forEach((p: any, i: number) => {
+  portfolio.projects.forEach((p, i) => {
     p.order = i;
   });
   
@@ -162,35 +155,26 @@ fastify.delete('/api/portfolio/projects/:id', async (request: any, reply) => {
   return { success: true, deleted };
 });
 
-// PUT /api/portfolio/projects/reorder - Reordenar proyectos
-fastify.put('/api/portfolio/projects/reorder', async (request: any, reply) => {
+// PUT /api/portfolio/projects/reorder
+fastify.put('/api/portfolio/projects/reorder', async (request, reply) => {
   const portfolio = loadPortfolio();
   portfolio.projects = request.body;
-  portfolio.projects.forEach((p: any, i: number) => p.order = i);
+  portfolio.projects.forEach((p, i) => p.order = i);
   savePortfolio(portfolio);
   return portfolio.projects;
 });
 
-// POST /api/portfolio/sync - Sincronizar todo el portfolio
-fastify.post('/api/portfolio/sync', async (request: any, reply) => {
+// POST /api/portfolio/sync
+fastify.post('/api/portfolio/sync', async (request, reply) => {
   savePortfolio(request.body);
   return { success: true, message: 'Portfolio sincronizado' };
 });
 
-// ==================== INICIO ====================
-
+// INICIO
 const start = async () => {
   try {
     await fastify.listen({ port: PORT, host: '0.0.0.0' });
     console.log(`🚀 Backend running on http://localhost:${PORT}`);
-    console.log(`📋 Endpoints disponibles:`);
-    console.log(`   GET  /api/portfolio`);
-    console.log(`   GET  /api/portfolio/profile`);
-    console.log(`   PUT  /api/portfolio/profile`);
-    console.log(`   GET  /api/portfolio/projects`);
-    console.log(`   POST /api/portfolio/projects`);
-    console.log(`   PUT  /api/portfolio/projects/:id`);
-    console.log(`   DELETE /api/portfolio/projects/:id`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
