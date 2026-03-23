@@ -1,71 +1,103 @@
 # Kwitt Architecture
 
-## 🧠 Multi-Agent System
+## 🧠 CLI-Driven System (Refactored)
 
-Kwitt utiliza una arquitectura de agentes múltiples donde cada agente tiene una responsabilidad específica:
+Kwitt now uses a **CLI-driven approach** where agents are **decision-makers**, NOT executors. All code changes go through **OpenCode CLI**.
 
 ```
 ┌─────────────────────────────────────────┐
-│         Orchestrator Agent              │
-│   (Coordina flujo y selecciona agentes)│
+│         Telegram Bot                     │
+│   (Receives user input)                  │
 └─────────────────┬───────────────────────┘
                   │
-        ┌─────────┴─────────┐
-        │                   │
-   ┌────▼────┐        ┌────▼────┐
-   │Intent   │        │Telegram │
-   │Agent    │        │Agent    │
-   └────┬────┘        └────┬────┘
-        │                   │
-        └─────────┬────────┘
+┌─────────────────▼───────────────────────┐
+│         Orchestrator Agent               │
+│   (Routes tasks to CLI Agent)            │
+└─────────────────┬───────────────────────┘
                   │
-        ┌─────────┴─────────┐
-        │                   │
-   ┌────▼────┐        ┌────▼────┐
-   │Portfolio│        │Git      │
-   │Agent    │        │Agent    │
-   └────┬────┘        └─────────┘
-        │
-   ┌────▼────┐        ┌─────────┐
-   │Frontend │        │Code     │
-   │Agent    │        │Agent    │
-   └─────────┘        └─────────┘
+┌─────────────────▼───────────────────────┐
+│         Intent Agent                     │
+│   (Parses intent → CLI instruction)      │
+└─────────────────┬───────────────────────┘
+                  │
+┌─────────────────▼───────────────────────┐
+│         CLI Agent                        │
+│   (Executes OpenCode CLI)                │
+└─────────────────┬───────────────────────┘
+                  │
+┌─────────────────▼───────────────────────┐
+│         CLI Runner (core)                │
+│   (Safe execution, timeout, logging)     │
+└─────────────────┬───────────────────────┘
+                  │
+         opencode run "<instruction>"
+                  │
+┌─────────────────▼───────────────────────┐
+│         Git Agent                        │
+│   (Commit & Push changes)                │
+└─────────────────────────────────────────┘
 ```
 
-## 🔧 Tools System
+## 🔥 Core Principle
 
-### FilesystemTool
-- `readFile(path)`: Lee archivos
-- `writeFile(path, content)`: Escribe archivos
-- `listFiles(path)`: Lista directorio
-- `searchCode(query)`: Busca en código
+**Agents become decision-makers, NOT executors.**
 
-### GitTool
-- `gitCommit(message)`: Crea commit
-- `gitPush()`: Push a remote
-- `gitDiff()`: Muestra cambios
-- `gitStatus()`: Estado del repositorio
+All code changes must go through CLI execution (OpenCode or similar).
 
-### TelegramTool
-- `sendMessage(chatId, text)`: Envía mensaje
-- `getUpdates()`: Recibe actualizaciones
-- `parseMessage(update)`: Parsea mensaje
+## Intent → Instruction Mapping
 
-### LLMTool
-- `generateText(prompt)`: Genera texto
-- `parseIntent(message)`: Parsea intención
+| User says | Intent | CLI Instruction for OpenCode |
+|-----------|--------|------------------------------|
+| "agrega proyecto github.com/user/repo" | add_project | "Add a new project to portfolio from GitHub repository. Extract name, description, and tags. Update frontend accordingly." |
+| "actualiza mi bio a soy desarrollador" | update_bio | "Update the portfolio bio to: 'soy desarrollador'. Save to portfolio.json." |
+| "hazlo más moderno" | enhance_frontend | "Enhance the frontend with modern animations. Add GSAP scroll animations to the hero and project cards." |
 
-## 🔁 Execution Flow
+## 📁 Project Structure
 
 ```
-1. Usuario envía mensaje a Telegram
-2. Telegram Agent recibe mensaje
-3. Orchestrator envía a Intent Agent
-4. Intent Agent usa LLM para parsear
-5. Orchestrator selecciona agentes apropiados
-6. Agents ejecutan tareas (Portfolio, Git, Frontend)
-7. Git Agent hace commit y push
-8. Telegram Agent responde al usuario
+kwitt/
+├── agents/              # Agent system (decision-makers only)
+│   ├── orchestrator.ts  # Routes tasks to CLI Agent
+│   ├── intent.ts        # Parses user intent
+│   ├── cli_agent.ts     # Executes OpenCode CLI
+│   ├── git.ts          # Git operations
+│   ├── telegram.ts     # Telegram wrapper
+│   └── index.ts
+├── core/                # Core utilities
+│   ├── cli_runner.ts   # Safe CLI execution layer
+│   ├── types.ts       # TypeScript types
+│   └── constants.ts
+├── tools/               # External tools
+│   ├── llm.ts         # OpenAI integration
+│   ├── git.ts         # Git tool
+│   ├── telegram.ts    # Telegram tool
+│   └── filesystem.ts # Filesystem tool
+├── backend/            # REST API
+├── frontend/           # Next.js app
+├── bot/                # Telegram Bot
+└── infra/              # Docker configs
+```
+
+## 🛠️ Safe Execution Layer (cli_runner.ts)
+
+Features:
+- **Timeout control** (default 120s)
+- **Dry-run mode**: `opencode run --dry-run "<instruction>"`
+- **Logging**: All commands logged to `./logs/`
+- **Error handling**: Captures stdout/stderr
+
+## 🚀 Deployment
+
+### Development
+```bash
+npm run dev:backend   # Puerto 3001
+npm run dev:frontend  # Puerto 3000
+npm run dev:bot       # Telegram Bot
+```
+
+### Docker
+```bash
+docker-compose up -d
 ```
 
 ## 📊 Data Model
@@ -89,52 +121,4 @@ Kwitt utiliza una arquitectura de agentes múltiples donde cada agente tiene una
     "tags": ["string"]
   }]
 }
-```
-
-## 🎨 Frontend Animations
-
-El frontend usa GSAP para animaciones:
-
-- **Hero**: Animación de entrada con `gsap.from()`
-- **Scroll**: ScrollTrigger para animaciones al hacer scroll
-- **Projects**: Stagger animation para tarjetas de proyectos
-- **Contact**: Fade-in para elementos de contacto
-
-## 🚀 Deployment
-
-### Development
-```bash
-npm run dev:backend   # Puerto 3001
-npm run dev:frontend  # Puerto 3000
-npm run dev:bot       # Telegram Bot
-```
-
-### Docker
-```bash
-docker-compose up -d
-```
-
-## 📁 Project Structure
-
-```
-kwitt/
-├── agents/           # Sistema de agentes IA
-│   ├── orchestrator.ts
-│   ├── intent.ts
-│   ├── portfolio.ts
-│   ├── git.ts
-│   ├── frontend.ts
-│   ├── code.ts
-│   ├── telegram.ts
-│   └── devops.ts
-├── tools/            # Herramientas del sistema
-│   ├── filesystem.ts
-│   ├── git.ts
-│   ├── telegram.ts
-│   └── llm.ts
-├── core/             # Tipos y constantes
-├── backend/          # API REST
-├── frontend/         # Next.js app
-├── bot/              # Telegram Bot
-└── infra/            # Docker configs
 ```

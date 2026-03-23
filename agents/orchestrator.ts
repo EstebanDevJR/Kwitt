@@ -1,10 +1,11 @@
 import { Intent, AgentResult } from '../core/types';
 import { telegramTool } from '../tools/telegram.js';
 import { llmTool } from '../tools/llm.js';
+import { cliAgent } from './cli_agent.js';
+import { gitAgent } from './git.js';
 
 export class OrchestratorAgent {
   private isProcessing: boolean = false;
-  private messageQueue: any[] = [];
 
   async processMessage(chatId: number, text: string): Promise<AgentResult> {
     if (this.isProcessing) {
@@ -37,143 +38,35 @@ export class OrchestratorAgent {
   }
 
   private async executeIntent(intent: Intent, chatId: number): Promise<AgentResult> {
-    switch (intent.action) {
-      case 'add_project':
-        return await this.handleAddProject(intent, chatId);
-      case 'update_bio':
-        return await this.handleUpdateBio(intent, chatId);
-      case 'update_contact':
-        return await this.handleUpdateContact(intent, chatId);
-      case 'delete_project':
-        return await this.handleDeleteProject(intent, chatId);
-      case 'reorder_projects':
-        return await this.handleReorderProjects(intent, chatId);
-      case 'enhance_frontend':
-        return await this.handleEnhanceFrontend(intent, chatId);
-      case 'get_status':
-        return await this.handleGetStatus(chatId);
-      default:
-        return { success: false, error: 'Unknown action' };
-    }
-  }
+    const instruction = cliAgent.mapIntentToInstruction(
+      intent.action,
+      intent.target,
+      intent.data
+    );
 
-  private async handleAddProject(intent: Intent, chatId: number): Promise<AgentResult> {
-    await telegramTool.sendMessage(chatId, '🔄 Agregando proyecto...');
-    
-    const portfolioAgent = await import('./portfolio.js');
-    const result = await portfolioAgent.addProject(intent.target);
-    
+    await telegramTool.sendMessage(chatId, `🔄 Ejecutando: ${intent.action}...`);
+
+    const result = await cliAgent.execute(instruction);
+
     if (result.success) {
-      await telegramTool.sendMessage(chatId, `✅ ${result.message}`);
-      
-      const gitAgent = await import('./git.js');
-      await gitAgent.commitAndPush('feat: add new project to portfolio');
-      
-      await telegramTool.sendMessage(chatId, '📦 Cambios guardados en Git');
+      await telegramTool.sendMessage(chatId, `✅ Acción completada`);
+
+      try {
+        await gitAgent.commitAndPush(`kwitt: update via CLI - ${intent.action}`);
+        await telegramTool.sendMessage(chatId, '📦 Cambios guardados en Git');
+      } catch (gitError) {
+        console.error('Git commit failed:', gitError);
+      }
     } else {
       await telegramTool.sendMessage(chatId, `❌ Error: ${result.error}`);
     }
-    
+
     return result;
   }
 
-  private async handleUpdateBio(intent: Intent, chatId: number): Promise<AgentResult> {
-    const bio = intent.data?.bio || intent.target;
-    
-    const portfolioAgent = await import('./portfolio.js');
-    const result = await portfolioAgent.updateBio(bio);
-    
-    if (result.success) {
-      await telegramTool.sendMessage(chatId, `✅ ${result.message}`);
-      
-      const gitAgent = await import('./git.js');
-      await gitAgent.commitAndPush('chore: update portfolio bio');
-    }
-    
-    return result;
-  }
-
-  private async handleUpdateContact(intent: Intent, chatId: number): Promise<AgentResult> {
-    const contactType = intent.data?.tipo || intent.target;
-    const contactValue = intent.data?.valor || '';
-    
-    const portfolioAgent = await import('./portfolio.js');
-    const result = await portfolioAgent.updateContact(contactType, contactValue);
-    
-    if (result.success) {
-      await telegramTool.sendMessage(chatId, `✅ ${result.message}`);
-      
-      const gitAgent = await import('./git.js');
-      await gitAgent.commitAndPush('chore: update contact info');
-    }
-    
-    return result;
-  }
-
-  private async handleDeleteProject(intent: Intent, chatId: number): Promise<AgentResult> {
-    const projectName = intent.target;
-    
-    const portfolioAgent = await import('./portfolio.js');
-    const result = await portfolioAgent.deleteProject(projectName);
-    
-    if (result.success) {
-      await telegramTool.sendMessage(chatId, `✅ ${result.message}`);
-      
-      const gitAgent = await import('./git.js');
-      await gitAgent.commitAndPush(`chore: remove project "${projectName}"`);
-    }
-    
-    return result;
-  }
-
-  private async handleReorderProjects(intent: Intent, chatId: number): Promise<AgentResult> {
-    await telegramTool.sendMessage(chatId, '🔄 Reordenando proyectos...');
-    
-    const portfolioAgent = await import('./portfolio.js');
-    const result = await portfolioAgent.reorderProjects();
-    
-    if (result.success) {
-      await telegramTool.sendMessage(chatId, `✅ ${result.message}`);
-    }
-    
-    return result;
-  }
-
-  private async handleEnhanceFrontend(intent: Intent, chatId: number): Promise<AgentResult> {
-    await telegramTool.sendMessage(chatId, '🎨 Mejorando el frontend con animaciones...');
-    
-    const frontendAgent = await import('./frontend.js');
-    const result = await frontendAgent.enhanceWithAnimations();
-    
-    if (result.success) {
-      await telegramTool.sendMessage(chatId, `✨ ${result.message}`);
-      
-      const gitAgent = await import('./git.js');
-      await gitAgent.commitAndPush('feat: enhance frontend with GSAP animations');
-    }
-    
-    return result;
-  }
-
-  private async handleGetStatus(chatId: number): Promise<AgentResult> {
-    const portfolioAgent = await import('./portfolio.js');
-    const status = await portfolioAgent.getStatus();
-    
-    const statusText = `📊 *Estado del Portfolio*\n\n` +
-      `*Nombre:* ${status.profile.name}\n` +
-      `*Bio:* ${status.profile.bio}\n` +
-      `*Proyectos:* ${status.projects.length}\n\n` +
-      `_Para hacer cambios, envíame un comando_`;
-    
-    await telegramTool.sendMarkdown(chatId, statusText);
-    
-    return { success: true, data: status };
-  }
-
-  getStatus(): { isProcessing: boolean; queueLength: number } {
+  getStatus(): { isProcessing: boolean } {
     return {
-      isProcessing: this.isProcessing,
-      queueLength: this.messageQueue.length
+      isProcessing: this.isProcessing
     };
   }
 }
