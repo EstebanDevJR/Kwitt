@@ -41,7 +41,18 @@ export default function Home() {
     fetch('/api/portfolio')
       .then(res => res.json())
       .then(data => {
-        setPortfolio(data);
+        if (data && data.profile) {
+          setPortfolio(data);
+        } else {
+          setPortfolio({
+            profile: {
+              name: 'Tu Nombre',
+              bio: 'Desarrollador passionate por la tecnología',
+              contact: { github: 'tugithub' }
+            },
+            projects: []
+          });
+        }
         setLoading(false);
       })
       .catch(() => {
