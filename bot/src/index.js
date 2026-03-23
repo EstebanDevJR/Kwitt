@@ -22,58 +22,24 @@ const DATA_DIR = IS_DOCKER ? '/app/data' : './data';
 const PORTFOLIO_FILE = join(DATA_DIR, 'portfolio.json');
 const VERSIONS_DIR = join(DATA_DIR, 'versions');
 const ANALYTICS_FILE = join(DATA_DIR, 'analytics.json');
-const TEMPLATES_FILE = join(DATA_DIR, 'templates.json');
 const MAX_VERSIONS = 20;
 const MAX_COMMAND_HISTORY = 50;
-const MAX_ANALYTICS_DAYS = 30;
 
-const lastCommandTime = new Map<number, number>();
-const pendingCommands = new Map<number, boolean>();
-const commandHistory = new Map<number, Array<{intent: Intent; timestamp: number; action: string}>>();
+const lastCommandTime = new Map();
+const pendingCommands = new Map();
+const commandHistory = new Map();
 
 const analytics = {
-  commands: [] as Array<{action: string; success: boolean; timestamp: number; user: number}>,
-  users: new Map<number, {commands: number; lastSeen: number}>()
+  commands: [],
+  users: new Map()
 };
 
-interface Intent {
-  action: string;
-  target: string;
-  data: Record<string, any>;
-  confidence: number;
-}
-
-interface GitHubRepo {
-  name: string;
-  description: string;
-  language: string;
-  stars: number;
-  forks: number;
-  topics: string[];
-  html_url: string;
-}
-
 const PORTFOLIO_TEMPLATES = {
-  minimal: {
-    name: 'Minimal',
-    theme: { colors: { primary: '#000000', accent: '#666666', surface: '#ffffff' }, fonts: { heading: 'Inter', body: 'Inter' }, layout: { hero: true, projects: true, contact: true } }
-  },
-  developer: {
-    name: 'Developer',
-    theme: { colors: { primary: '#0a0a0a', accent: '#22c55e', surface: '#171717' }, fonts: { heading: 'Fira Code', body: 'Inter' }, layout: { hero: true, projects: true, contact: true } }
-  },
-  creative: {
-    name: 'Creative',
-    theme: { colors: { primary: '#1e1b4b', accent: '#f472b6', surface: '#fafafa' }, fonts: { heading: 'Poppins', body: 'Poppins' }, layout: { hero: true, projects: true, contact: true } }
-  },
-  dark: {
-    name: 'Dark Pro',
-    theme: { colors: { primary: '#09090b', accent: '#8b5cf6', surface: '#18181b' }, fonts: { heading: 'Inter', body: 'Inter' }, layout: { hero: true, projects: true, contact: true } }
-  },
-  light: {
-    name: 'Light Pro',
-    theme: { colors: { primary: '#ffffff', accent: '#3b82f6', surface: '#f8fafc' }, fonts: { heading: 'Inter', body: 'Inter' }, layout: { hero: true, projects: true, contact: true } }
-  }
+  minimal: { name: 'Minimal', theme: { colors: { primary: '#000000', accent: '#666666', surface: '#ffffff' }, fonts: { heading: 'Inter', body: 'Inter' }, layout: { hero: true, projects: true, contact: true } } },
+  developer: { name: 'Developer', theme: { colors: { primary: '#0a0a0a', accent: '#22c55e', surface: '#171717' }, fonts: { heading: 'Fira Code', body: 'Inter' }, layout: { hero: true, projects: true, contact: true } } },
+  creative: { name: 'Creative', theme: { colors: { primary: '#1e1b4b', accent: '#f472b6', surface: '#fafafa' }, fonts: { heading: 'Poppins', body: 'Poppins' }, layout: { hero: true, projects: true, contact: true } } },
+  dark: { name: 'Dark Pro', theme: { colors: { primary: '#09090b', accent: '#8b5cf6', surface: '#18181b' }, fonts: { heading: 'Inter', body: 'Inter' }, layout: { hero: true, projects: true, contact: true } } },
+  light: { name: 'Light Pro', theme: { colors: { primary: '#ffffff', accent: '#3b82f6', surface: '#f8fafc' }, fonts: { heading: 'Inter', body: 'Inter' }, layout: { hero: true, projects: true, contact: true } } }
 };
 
 console.log(`🚀 Kwitt Bot starting...`);
@@ -84,21 +50,12 @@ console.log(`🌿 Git branch: ${GIT_BRANCH}`);
 console.log(`📡 Webhook: ${WEBHOOK_URL ? 'enabled' : 'disabled'}`);
 console.log(`👥 Authorized users: ${AUTHORIZED_CHAT_IDS.length}`);
 
-function sanitizeInput(text: string): string {
+function sanitizeInput(text) {
   return text.replace(/[<>]/g, '').replace(/javascript:/gi, '').replace(/on\w+=/gi, '').slice(0, 500);
 }
 
-function applyAlias(text: string): string {
-  const aliases: Record<string, string> = {
-    '/s': '/estado',
-    '/st': '/estado',
-    '/a ': 'agrega proyecto ',
-    '/d ': 'elimina proyecto ',
-    '/b': 'actualiza mi bio ',
-    '/t': 'tema ',
-    '/v': 'versiones',
-    '/?': '/ayuda'
-  };
+function applyAlias(text) {
+  const aliases = { '/s': '/estado', '/st': '/estado', '/a ': 'agrega proyecto ', '/d ': 'elimina proyecto ', '/b': 'actualiza mi bio ', '/t': 'tema ', '/v': 'versiones', '/?': '/ayuda' };
   let result = text;
   for (const [alias, cmd] of Object.entries(aliases)) {
     if (result.toLowerCase().startsWith(alias)) {
@@ -108,13 +65,13 @@ function applyAlias(text: string): string {
   return result;
 }
 
-function ensureDir(dir: string): void {
+function ensureDir(dir) {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
 }
 
-function loadPortfolio(): any {
+function loadPortfolio() {
   ensureDir(DATA_DIR);
   if (existsSync(PORTFOLIO_FILE)) {
     return JSON.parse(readFileSync(PORTFOLIO_FILE, 'utf-8'));
@@ -130,7 +87,7 @@ function loadPortfolio(): any {
   return defaultPortfolio;
 }
 
-function savePortfolio(data: any, createVersion = true): void {
+function savePortfolio(data, createVersion = true) {
   ensureDir(DATA_DIR);
   if (createVersion) {
     createVersionSnapshot(data);
@@ -138,7 +95,7 @@ function savePortfolio(data: any, createVersion = true): void {
   writeFileSync(PORTFOLIO_FILE, JSON.stringify(data, null, 2));
 }
 
-function createVersionSnapshot(data: any): void {
+function createVersionSnapshot(data) {
   ensureDir(VERSIONS_DIR);
   const timestamp = new Date().toISOString();
   const versionFile = join(VERSIONS_DIR, `${timestamp}.json`);
@@ -149,7 +106,7 @@ function createVersionSnapshot(data: any): void {
   }
 }
 
-function loadAnalytics(): void {
+function loadAnalytics() {
   if (existsSync(ANALYTICS_FILE)) {
     try {
       const data = JSON.parse(readFileSync(ANALYTICS_FILE, 'utf-8'));
@@ -161,19 +118,16 @@ function loadAnalytics(): void {
   }
 }
 
-function saveAnalytics(): void {
+function saveAnalytics() {
   try {
-    const data = {
-      commands: analytics.commands.slice(-1000),
-      users: Array.from(analytics.users.entries())
-    };
+    const data = { commands: analytics.commands.slice(-1000), users: Array.from(analytics.users.entries()) };
     writeFileSync(ANALYTICS_FILE, JSON.stringify(data, null, 2));
   } catch (e) {
     console.error('[Analytics] Save error:', e);
   }
 }
 
-function trackCommand(action: string, success: boolean, userId: number): void {
+function trackCommand(action, success, userId) {
   analytics.commands.push({ action, success, timestamp: Date.now(), user: userId });
   if (analytics.commands.length > 1000) {
     analytics.commands = analytics.commands.slice(-1000);
@@ -189,10 +143,8 @@ function getAnalytics() {
   const now = Date.now();
   const last24h = analytics.commands.filter(c => now - c.timestamp < 86400000);
   const last7d = analytics.commands.filter(c => now - c.timestamp < 604800000);
-  
-  const actionCounts = last24h.reduce((acc, c) => { acc[c.action] = (acc[c.action] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const actionCounts = last24h.reduce((acc, c) => { acc[c.action] = (acc[c.action] || 0) + 1; return acc; }, {});
   const successRate = last24h.length > 0 ? (last24h.filter(c => c.success).length / last24h.length * 100).toFixed(1) : '0';
-  
   return {
     totalCommands: analytics.commands.length,
     last24h: last24h.length,
@@ -204,7 +156,7 @@ function getAnalytics() {
   };
 }
 
-function exportPortfolio(format: string): string {
+function exportPortfolio(format) {
   const portfolio = loadPortfolio();
   switch (format) {
     case 'markdown':
@@ -216,7 +168,7 @@ function exportPortfolio(format: string): string {
   }
 }
 
-function importPortfolio(jsonData: string): boolean {
+function importPortfolio(jsonData) {
   try {
     const data = JSON.parse(jsonData);
     savePortfolio(data);
@@ -226,18 +178,15 @@ function importPortfolio(jsonData: string): boolean {
   }
 }
 
-async function fetchGitHubRepo(url: string): Promise<GitHubRepo | null> {
+async function fetchGitHubRepo(url) {
   const match = url.match(/github\.com[/:]([\w-]+)\/([^\s/]+)/);
   if (!match) return null;
-  
   const [owner, repo] = match.slice(1);
   try {
-    const headers: Record<string, string> = { 'Accept': 'application/vnd.github.v3+json' };
+    const headers = { 'Accept': 'application/vnd.github.v3+json' };
     if (GITHUB_TOKEN) headers['Authorization'] = `token ${GITHUB_TOKEN}`;
-    
     const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
     if (!response.ok) return null;
-    
     const data = await response.json();
     return {
       name: data.name,
@@ -254,20 +203,20 @@ async function fetchGitHubRepo(url: string): Promise<GitHubRepo | null> {
   }
 }
 
-function saveCommandToHistory(chatId: number, intent: Intent, action: string): void {
+function saveCommandToHistory(chatId, intent, action) {
   const history = commandHistory.get(chatId) || [];
   history.unshift({ intent, timestamp: Date.now(), action });
   if (history.length > MAX_COMMAND_HISTORY) history.pop();
   commandHistory.set(chatId, history);
 }
 
-function getCommandHistory(chatId: number): Array<{intent: Intent; timestamp: number; action: string}> {
+function getCommandHistory(chatId) {
   return commandHistory.get(chatId) || [];
 }
 
-async function sendMessage(chatId: number, text: string, parseMode = 'Markdown', replyMarkup?: any) {
+async function sendMessage(chatId, text, parseMode = 'Markdown', replyMarkup) {
   try {
-    const body: any = { chat_id: chatId, text, parse_mode: parseMode };
+    const body = { chat_id: chatId, text, parse_mode: parseMode };
     if (replyMarkup) body.reply_markup = replyMarkup;
     await fetch(`${BASE_URL}/sendMessage`, {
       method: 'POST',
@@ -299,15 +248,7 @@ function getThemesKeyboard() {
   };
 }
 
-function getExportKeyboard() {
-  return {
-    inline_keyboard: [
-      [{ text: '📄 JSON', callback_data: 'export_json' }, { text: '📝 Markdown', callback_data: 'export_markdown' }, { text: '🌐 HTML', callback_data: 'export_html' }]
-    ]
-  };
-}
-
-function checkRateLimit(chatId: number): boolean {
+function checkRateLimit(chatId) {
   const now = Date.now();
   const lastTime = lastCommandTime.get(chatId) || 0;
   if (now - lastTime < RATE_LIMIT_MS) return false;
@@ -315,25 +256,25 @@ function checkRateLimit(chatId: number): boolean {
   return true;
 }
 
-function isAuthorized(chatId: number): boolean {
+function isAuthorized(chatId) {
   if (AUTHORIZED_CHAT_IDS.length === 0) return true;
   return AUTHORIZED_CHAT_IDS.includes(chatId);
 }
 
-async function runOpenCodeWithRetry(instruction: string, dryRun = false, retries = 2): Promise<{ success: boolean; stdout: string; stderr: string; retries: number }> {
+async function runOpenCodeWithRetry(instruction, dryRun = false, retries = 2) {
   let lastError = '';
   for (let i = 0; i <= retries; i++) {
     try {
       const result = await runOpenCode(instruction, dryRun);
       if (result.success || i === retries) return { ...result, retries: i };
       lastError = result.stderr;
-    } catch (e: any) { lastError = e.message; }
+    } catch (e) { lastError = e.message; }
     if (i < retries) await new Promise(r => setTimeout(r, 1000 * (i + 1)));
   }
   return { success: false, stdout: '', stderr: lastError, retries };
 }
 
-async function runOpenCode(instruction: string, dryRun = false): Promise<{ success: boolean; stdout: string; stderr: string }> {
+async function runOpenCode(instruction, dryRun = false) {
   return new Promise((resolve) => {
     const cmd = dryRun ? `opencode run --dry-run "${instruction.replace(/"/g, '\\"')}"` : `opencode run "${instruction.replace(/"/g, '\\"')}"`;
     console.log(`[CLI] ${cmd}`);
@@ -348,7 +289,7 @@ async function runOpenCode(instruction: string, dryRun = false): Promise<{ succe
   });
 }
 
-async function commitToGit(message: string): Promise<boolean> {
+async function commitToGit(message) {
   try {
     if (!existsSync('.git')) { console.log('[Git] Not a git repository'); return false; }
     execSync('git add data/portfolio.json', { encoding: 'utf-8' });
@@ -358,9 +299,9 @@ async function commitToGit(message: string): Promise<boolean> {
   } catch (e) { console.error('[Git] Commit failed:', e); return false; }
 }
 
-function mapIntentToInstruction(intent: Intent): string {
+function mapIntentToInstruction(intent) {
   const { action, target, data } = intent;
-  const mappings: Record<string, string> = {
+  const mappings = {
     add_project: `Add a new project from GitHub ${target}. Extract name, description, tech stack. Update portfolio.`,
     update_bio: `Update portfolio bio to: "${data?.bio || target}".`,
     update_theme: `Update theme: ${data?.colors ? `colors: ${JSON.stringify(data.colors)}` : ''} ${data?.fonts ? `fonts: ${JSON.stringify(data.fonts)}` : ''}.`,
@@ -374,7 +315,7 @@ function mapIntentToInstruction(intent: Intent): string {
   return mappings[action] || `Execute: ${action}`;
 }
 
-function simpleMapIntentToInstruction(intent: Intent): string {
+function simpleMapIntentToInstruction(intent) {
   const { action, target, data } = intent;
   const portfolio = loadPortfolio();
   switch (action) {
@@ -393,14 +334,14 @@ function simpleMapIntentToInstruction(intent: Intent): string {
     case 'delete_project':
       const nameToDelete = target.replace(/elimina|borra|proyecto/gi, '').trim().toLowerCase();
       const index = portfolio.projects.findIndex(p => p.name.toLowerCase().includes(nameToDelete) || nameToDelete.includes(p.name.toLowerCase()));
-      if (index !== -1) { const deleted = portfolio.projects.splice(index, 1)[0]; portfolio.projects.forEach((p: any, i: number) => { p.order = i; }); savePortfolio(portfolio); return `Deleted "${deleted.name}"`; }
+      if (index !== -1) { const deleted = portfolio.projects.splice(index, 1)[0]; portfolio.projects.forEach((p, i) => { p.order = i; }); savePortfolio(portfolio); return `Deleted "${deleted.name}"`; }
       return 'Project not found';
     case 'restore_version':
       const files = readdirSync(VERSIONS_DIR).filter(f => f.endsWith('.json')).sort().reverse();
       if (files.length > 0) { const latest = JSON.parse(readFileSync(join(VERSIONS_DIR, files[0]), 'utf-8')); savePortfolio(latest.data, false); return 'Restored to latest' }
       return 'No versions';
     case 'apply_template':
-      const templateKey = data?.template as keyof typeof PORTFOLIO_TEMPLATES;
+      const templateKey = data?.template;
       if (PORTFOLIO_TEMPLATES[templateKey]) { portfolio.theme = PORTFOLIO_TEMPLATES[templateKey].theme; savePortfolio(portfolio); return `Applied template: ${PORTFOLIO_TEMPLATES[templateKey].name}`; }
       return 'Template not found';
     case 'export': return exportPortfolio(data?.format || 'json');
@@ -409,7 +350,7 @@ function simpleMapIntentToInstruction(intent: Intent): string {
   }
 }
 
-async function parseIntent(message: string): Promise<Intent> {
+async function parseIntent(message) {
   if (!OPENAI_API_KEY) return simpleParseIntent(message);
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -440,7 +381,7 @@ Responde SOLO con JSON: {"action": "...", "target": "...", "data": {}, "confiden
   return simpleParseIntent(message);
 }
 
-function simpleParseIntent(text: string): Intent {
+function simpleParseIntent(text) {
   const lower = text.toLowerCase();
   if (lower.startsWith('preview') || lower.startsWith('previsualizar')) return { action: 'preview', target: text.replace(/^(preview|previsualizar)\s*/i, ''), data: {}, confidence: 0.9 };
   if (lower.startsWith('undo') || lower.startsWith('deshacer')) return { action: 'undo', target: '', data: {}, confidence: 0.9 };
@@ -461,13 +402,13 @@ function simpleParseIntent(text: string): Intent {
   if (lower.includes('reparar') || lower.includes('repair') || lower.includes('fix')) return { action: 'repair', confidence: 0.9 };
   if (lower.includes('estado') || lower.includes('status')) return { action: 'get_status', confidence: 0.8 };
   if (lower.includes('elimina') || lower.includes('borra')) return { action: 'delete_project', target: text, confidence: 0.7 };
-  if (lower.includes('animacion') || lower.includes('animación')) return { action: 'toggle_animations', data: { value: lower.includes('activar') || lower.includes('desactivar') === false }, confidence: 0.7 };
+  if (lower.includes('animacion') || lower.includes('animación')) return { action: 'toggle_animations', data: { value: lower.includes('activar') }, confidence: 0.7 };
   if (lower.includes('oscuro') || lower.includes('dark')) return { action: 'toggle_darkmode', data: { value: !lower.includes('desactivar') && !lower.includes('claro') }, confidence: 0.7 };
   if (lower.includes('rama') || lower.includes('branch')) { const branchMatch = text.match(/(?:rama|branch)\s+(\S+)/i); return { action: 'change_branch', target: branchMatch?.[1] || '', confidence: 0.8 }; }
   return { action: 'unknown', target: '', data: {}, confidence: 0 };
 }
 
-async function handleCLICommand(chatId: number, intent: Intent, dryRun = false, saveHistory = true) {
+async function handleCLICommand(chatId, intent, dryRun = false, saveHistory = true) {
   const instruction = mapIntentToInstruction(intent);
   const modeText = dryRun ? '🔍 (PREVIEW)' : '🔄';
   await sendMessage(chatId, `${modeText} Ejecutando: ${intent.action}...`);
@@ -493,7 +434,7 @@ async function handleCLICommand(chatId: number, intent: Intent, dryRun = false, 
   }
 }
 
-async function handleUndo(chatId: number) {
+async function handleUndo(chatId) {
   const history = getCommandHistory(chatId);
   if (history.length === 0) { await sendMessage(chatId, '❌ No hay comandos para deshacer'); return; }
   const lastCmd = history[0];
@@ -503,7 +444,7 @@ async function handleUndo(chatId: number) {
   await sendMessage(chatId, '✅ Comando deshecho');
 }
 
-async function handleGetStatus(chatId: number) {
+async function handleGetStatus(chatId) {
   const portfolio = loadPortfolio();
   const versions = existsSync(VERSIONS_DIR) ? readdirSync(VERSIONS_DIR).filter(f => f.endsWith('.json')) : [];
   const status = `📊 *Estado del Portfolio*
@@ -517,7 +458,7 @@ async function handleGetStatus(chatId: number) {
   await sendMessage(chatId, status, 'Markdown', getMainKeyboard());
 }
 
-async function handleAnalytics(chatId: number) {
+async function handleAnalytics(chatId) {
   const stats = getAnalytics();
   const msg = `📈 *Analytics (24h)*
 
@@ -531,7 +472,7 @@ ${stats.topActions.slice(0, 5).map(([a, c]) => `• ${a}: ${c}`).join('\n')}`;
   await sendMessage(chatId, msg, 'Markdown');
 }
 
-async function handleListVersions(chatId: number) {
+async function handleListVersions(chatId) {
   if (!existsSync(VERSIONS_DIR)) { await sendMessage(chatId, '❌ No hay versiones'); return; }
   const files = readdirSync(VERSIONS_DIR).filter(f => f.endsWith('.json'));
   if (files.length === 0) { await sendMessage(chatId, '❌ No hay versiones'); return; }
@@ -539,10 +480,10 @@ async function handleListVersions(chatId: number) {
   await sendMessage(chatId, `📜 *Versiones:*\n\n${list}\n\nUsa "restaurar"`);
 }
 
-async function handleRunDoctor(chatId: number) {
+async function handleRunDoctor(chatId) {
   const portfolio = loadPortfolio();
   const versions = existsSync(VERSIONS_DIR) ? readdirSync(VERSIONS_DIR).filter(f => f.endsWith('.json')) : [];
-  let issues: string[] = [];
+  let issues = [];
   if (!portfolio.profile?.name || portfolio.profile.name === 'Tu Nombre') issues.push('⚠️ Perfil no configurado');
   if (versions.length === 0) issues.push('⚠️ Sin backups');
   if (!OPENAI_API_KEY) issues.push('ℹ️ Sin OpenAI');
@@ -552,7 +493,7 @@ async function handleRunDoctor(chatId: number) {
   else await sendMessage(chatId, `🔍 *Diagnóstico:*\n\n${issues.join('\n')}`);
 }
 
-async function handleHelp(chatId: number) {
+async function handleHelp(chatId) {
   const helpText = `📖 *Comandos*
 
 *Portfolio:* proyecto, bio, estado
@@ -563,7 +504,7 @@ async function handleHelp(chatId: number) {
   await sendMessage(chatId, helpText, 'Markdown', getMainKeyboard());
 }
 
-async function handleRepair(chatId: number) {
+async function handleRepair(chatId) {
   const portfolio = loadPortfolio();
   if (!portfolio.settings) portfolio.settings = { animations: true, darkMode: true };
   if (!portfolio.theme) portfolio.theme = { colors: {}, fonts: {}, layout: {} };
@@ -572,7 +513,7 @@ async function handleRepair(chatId: number) {
   await sendMessage(chatId, '✅ Reparación completada');
 }
 
-async function handleCallback(chatId: number, callbackData: string) {
+async function handleCallback(chatId, callbackData) {
   switch (callbackData) {
     case 'status': await handleGetStatus(chatId); break;
     case 'add_project_prompt': await sendMessage(chatId, '📎 Envía: "agrega proyecto github.com/user/repo"'); break;
@@ -596,7 +537,7 @@ async function handleCallback(chatId: number, callbackData: string) {
   await fetch(`${BASE_URL}/answerCallbackQuery`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callback_query_id: '' }) });
 }
 
-async function handleMessage(chatId: number, text: string) {
+async function handleMessage(chatId, text) {
   const sanitized = applyAlias(sanitizeInput(text));
   if (!isAuthorized(chatId)) { await sendMessage(chatId, '⛔ No autorizado'); return; }
   if (!checkRateLimit(chatId)) { await sendMessage(chatId, '⏳ Espera...'); return; }
@@ -627,7 +568,7 @@ async function handleMessage(chatId: number, text: string) {
     }
   } catch (error) {
     console.error('Error:', error);
-    await sendMessage(chatId, '❌ Error: ' + (error as Error).message);
+    await sendMessage(chatId, '❌ Error: ' + error.message);
   } finally {
     pendingCommands.set(chatId, false);
   }
@@ -656,7 +597,7 @@ async function startWebhookServer() {
   fastify.get('/health', async () => ({ status: 'ok', mode: 'webhook' }));
   fastify.get('/api/analytics', async () => getAnalytics());
   fastify.get('/api/portfolio', async () => loadPortfolio());
-  fastify.post('/webhook', async (request: any) => {
+  fastify.post('/webhook', async (request) => {
     const update = request.body;
     if (update.callback_query) await handleCallback(update.callback_query.message.chat.id, update.callback_query.data);
     else if (update.message?.text) await handleMessage(update.message.chat.id, update.message.text);
