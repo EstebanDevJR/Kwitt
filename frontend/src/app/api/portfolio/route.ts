@@ -6,10 +6,13 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    console.log('[API] Fetching from:', `${API_URL}/api/portfolio`);
     const res = await fetch(`${API_URL}/api/portfolio`, { cache: 'no-store' });
     const data = await res.json();
+    console.log('[API] Got data:', JSON.stringify(data));
     return NextResponse.json(data);
   } catch (error) {
+    console.error('[API] Error:', error);
     return NextResponse.json(
       { error: 'Failed to fetch portfolio' },
       { status: 500 }

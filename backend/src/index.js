@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -15,10 +15,35 @@ await fastify.register(cors, {
 });
 
 function getPortfolioPath() {
-  return join(__dirname, '../../portfolio.json');
+  return '/app/data/portfolio.json';
+}
+
+function ensureDataDir() {
+  const dir = '/app/data';
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  
+  const portfolioPath = getPortfolioPath();
+  if (!existsSync(portfolioPath)) {
+    const defaultPortfolio = {
+      profile: {
+        name: 'Tu Nombre',
+        bio: 'Una breve descripción sobre ti...',
+        contact: {
+          email: 'tu@email.com',
+          github: 'tugithub',
+          twitter: 'tutwitter'
+        }
+      },
+      projects: []
+    };
+    writeFileSync(portfolioPath, JSON.stringify(defaultPortfolio, null, 2));
+  }
 }
 
 function loadPortfolio() {
+  ensureDataDir();
   const portfolioPath = getPortfolioPath();
   
   if (existsSync(portfolioPath)) {

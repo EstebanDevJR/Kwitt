@@ -11,7 +11,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const API_URL = process.env.API_URL || 'http://localhost:3001';
 
 const BASE_URL = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
-const portfolioPath = join(__dirname, '../../portfolio.json');
+const portfolioPath = '/app/data/portfolio.json';
 
 function loadPortfolio() {
   if (existsSync(portfolioPath)) {
@@ -97,8 +97,9 @@ function simpleParseIntent(text) {
   }
   
   if (lower.includes('bio') || (lower.includes('actualiza') && lower.includes('mi'))) {
-    const bioMatch = text.replace(/actualiza mi bio/gi, '').replace(/actualiza mi/gi, '').trim();
-    return { action: 'update_bio', target: 'profile', data: { bio: bioMatch || text }, confidence: 0.7 };
+    let bio = text;
+    bio = bio.replace(/actualiza mi bio a,/gi, '').replace(/actualiza mi bio/gi, '').replace(/actualiza mi a,/gi, '').replace(/actualiza mi/gi, '').replace(/^a,?\s*/gi, '').trim();
+    return { action: 'update_bio', target: 'profile', data: { bio: bio || text }, confidence: 0.7 };
   }
   
   if (lower.includes('contacto') || lower.includes('contact')) {
