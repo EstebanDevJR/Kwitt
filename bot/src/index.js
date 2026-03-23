@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -171,16 +171,15 @@ function simpleParseIntent(text) {
 
 function createVersion(data) {
   const versionsDir = '/app/data/versions';
-  const fs = require('fs');
   
   if (!existsSync(versionsDir)) {
-    fs.mkdirSync(versionsDir, { recursive: true });
+    mkdirSync(versionsDir, { recursive: true });
   }
   
   const timestamp = new Date().toISOString();
   const versionFile = join(versionsDir, `${timestamp}.json`);
   
-  fs.writeFileSync(versionFile, JSON.stringify({
+  writeFileSync(versionFile, JSON.stringify({
     timestamp,
     data,
     type: 'auto'
@@ -189,13 +188,12 @@ function createVersion(data) {
 
 function getVersions() {
   const versionsDir = '/app/data/versions';
-  const fs = require('fs');
   
   if (!existsSync(versionsDir)) {
     return [];
   }
   
-  const files = fs.readdirSync(versionsDir).filter(f => f.endsWith('.json'));
+  const files = readdirSync(versionsDir).filter(f => f.endsWith('.json'));
   return files.map(f => ({
     file: f,
     timestamp: f.replace('.json', '')
@@ -204,7 +202,6 @@ function getVersions() {
 
 function restoreVersion(timestamp) {
   const versionsDir = '/app/data/versions';
-  const fs = require('fs');
   
   const versionFile = join(versionsDir, `${timestamp}.json`);
   
@@ -212,7 +209,7 @@ function restoreVersion(timestamp) {
     throw new Error('Versión no encontrada');
   }
   
-  const version = JSON.parse(fs.readFileSync(versionFile, 'utf-8'));
+  const version = JSON.parse(readFileSync(versionFile, 'utf-8'));
   
   const current = loadPortfolio();
   createVersion({ ...current, _restoredFrom: timestamp });
