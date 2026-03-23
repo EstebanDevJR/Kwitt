@@ -1,4 +1,5 @@
-import { spawn, execSync, existsSync } from 'child_process';
+import { spawn, execSync } from 'child_process';
+import { existsSync } from 'fs';
 import { config } from '../config.js';
 import { portfolio, analytics } from '../data/portfolio.js';
 
