@@ -24,6 +24,8 @@ export const config = {
     cliTimeout: parseInt(process.env.CLI_TIMEOUT || '120000'),
     rateLimitMs: parseInt(process.env.RATE_LIMIT_MS || '3000'),
     backupInterval: parseInt(process.env.SCHEDULED_BACKUP_INTERVAL || '3600000'),
+    agentsEnabled: process.env.AGENTS_ENABLED !== 'false',
+    agentsUrl: process.env.AGENTS_URL || 'http://localhost:8000',
   },
   paths: {
     isDocker: existsSync('/app/.dockerenv') || process.env.DOCKER === 'true',
@@ -50,6 +52,20 @@ export const DEFAULT_PORTFOLIO = {
   projects: [],
   theme: { colors: {}, fonts: {}, layout: {} },
   settings: { animations: true, darkMode: true },
+  customSections: [],
+};
+
+export const EXPANDED_PORTFOLIO = {
+  profile: { name: 'Tu Nombre', bio: 'Descripción...', avatar: '', contact: {} },
+  projects: [],
+  skills: [],
+  experience: [],
+  education: [],
+  services: [],
+  testimonials: [],
+  social: [],
+  theme: { colors: {}, fonts: {}, layout: {} },
+  settings: { animations: true, darkMode: true, language: 'es' },
   customSections: [],
 };
 

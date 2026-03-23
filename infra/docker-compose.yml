@@ -1,47 +1,6 @@
 version: '3.8'
 
 services:
-  backend:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-    container_name: kwitt-backend
-    ports:
-      - "3001:3001"
-    env_file:
-      - ../.env
-    environment:
-      - NODE_ENV=development
-      - PORT=3001
-    volumes:
-      - portfolio-shared:/app/data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  frontend:
-    build:
-      context: ../frontend
-      dockerfile: Dockerfile
-    container_name: kwitt-frontend
-    ports:
-      - "3000:3000"
-    env_file:
-      - ../.env
-    environment:
-      - NODE_ENV=development
-      - NEXT_PUBLIC_API_URL=http://backend:3001
-    volumes:
-      - portfolio-shared:/app/data:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
-
   bot:
     build:
       context: ../bot
@@ -50,17 +9,57 @@ services:
     env_file:
       - ../.env
     environment:
-      - API_URL=http://backend:3001
+      - DOCKER=true
+      - AGENTS_ENABLED=true
+      - AGENTS_URL=http://agents:8000
     volumes:
       - portfolio-shared:/app/data
+      - workspace:/app/workspace
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - backend
+      - agents
+    restart: unless-stopped
+
+  agents:
+    build:
+      context: ../agents
+      dockerfile: Dockerfile
+    container_name: kwitt-agents
+    env_file:
+      - ../.env
+    environment:
+      - WORKSPACE=/app/workspace
+      - PYTHONUNBUFFERED=1
+      - DEPLOY_ENABLED=false
+    volumes:
+      - workspace:/app/workspace
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  opencode:
+    image: alexandremblah/opencode:latest
+    container_name: kwitt-opencode
+    volumes:
+      - workspace:/app/workspace
+      - ../skills:/app/skills:ro
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+    command: ["sleep", "infinity"]
     restart: unless-stopped
 
 volumes:
   portfolio-shared:
+  workspace:
 
 networks:
   default:

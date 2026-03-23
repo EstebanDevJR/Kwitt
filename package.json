@@ -1,17 +1,18 @@
 {
   "name": "kwitt",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "AI-Powered Portfolio OS controlled via Telegram",
   "private": true,
   "scripts": {
-    "dev:backend": "cd backend && npm run dev",
-    "dev:frontend": "cd frontend && npm run dev",
-    "dev:bot": "cd bot && npm run dev",
-    "build:all": "npm run build:backend && npm run build:frontend",
-    "docker:up": "docker-compose up -d",
-    "docker:down": "docker-compose down"
+    "dev:agents": "cd agents && pip install -r requirements.txt && python -m src.server",
+    "dev:bot": "cd bot && npm install && npm run dev",
+    "docker:up": "docker-compose -f infra/docker-compose.yml up -d",
+    "docker:down": "docker-compose -f infra/docker-compose.yml down",
+    "docker:build": "docker-compose -f infra/docker-compose.yml build",
+    "clean": "rm -rf bot/node_modules agents/venv"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.0.0",
+    "python": ">=3.11"
   }
 }

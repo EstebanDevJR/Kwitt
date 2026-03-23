@@ -1,17 +1,12 @@
 import fetch from 'node-fetch';
 import { config } from '../config.js';
-import { intent } from '../parsers/intent.js';
-import { handlers } from './actions.js';
-import { executor } from '../cli/executor.js';
-import { portfolio, analytics, exportPortfolio } from '../data/portfolio.js';
+import { agents } from './agents.js';
 
 const { telegram, auth, runtime } = config;
 const BASE_URL = telegram.baseUrl;
+const AGENTS_ENABLED = config.runtime.agentsEnabled;
 
-const lastCommandTime = new Map();
 const pendingCommands = new Map();
-const commandHistory = new Map();
-const MAX_HISTORY = 50;
 
 function isAuthorized(chatId) {
   if (auth.chatIds.length === 0) return true;
@@ -20,13 +15,13 @@ function isAuthorized(chatId) {
 
 function checkRateLimit(chatId) {
   const now = Date.now();
-  const lastTime = lastCommandTime.get(chatId) || 0;
+  const lastTime = pendingCommands.get(chatId) || 0;
   if (now - lastTime < runtime.rateLimitMs) return false;
-  lastCommandTime.set(chatId, now);
+  pendingCommands.set(chatId, now);
   return true;
 }
 
-async function send(chatId, text, parseMode = 'Markdown', replyMarkup) {
+async function send(chatId, text, parseMode = 'Markdown', replyMarkup = null) {
   try {
     const body = { chat_id: chatId, text, parse_mode: parseMode };
     if (replyMarkup) body.reply_markup = replyMarkup;
@@ -38,141 +33,107 @@ async function send(chatId, text, parseMode = 'Markdown', replyMarkup) {
   } catch (e) { console.error('Send error:', e); }
 }
 
-function saveToHistory(chatId, intentObj) {
-  const history = commandHistory.get(chatId) || [];
-  history.unshift({ intent: intentObj, timestamp: Date.now() });
-  if (history.length > MAX_HISTORY) history.pop();
-  commandHistory.set(chatId, history);
-}
-
-function getHistory(chatId) {
-  return commandHistory.get(chatId) || [];
-}
-
 export const router = {
   async handleMessage(chatId, text) {
-    const raw = intent.sanitize(intent.applyAliases(text));
+    const raw = text.toLowerCase().trim();
     
     if (!isAuthorized(chatId)) { await send(chatId, '⛔ No autorizado'); return; }
-    if (!checkRateLimit(chatId)) { await send(chatId, '⏳ Espera...'); return; }
-    if (pendingCommands.get(chatId)) { await send(chatId, '⏳ En proceso...'); return; }
-    pendingCommands.set(chatId, true);
+    
+    const now = Date.now();
+    const lastTime = pendingCommands.get(chatId) || 0;
+    if (now - lastTime < runtime.rateLimitMs) { await send(chatId, '⏳ Espera un momento...'); return; }
+    pendingCommands.set(chatId, now);
 
     try {
-      console.log(`📩 ${chatId}: ${raw}`);
+      console.log(`📩 [${new Date().toISOString()}] Chat ${chatId}: ${text}`);
       
-      if (raw.startsWith('/start')) { await handlers.status(chatId); return; }
-      if (raw.startsWith('/ayuda') || raw.startsWith('/help')) { await handlers.help(chatId); return; }
-      if (raw.startsWith('/estado') || raw.startsWith('/s')) { await handlers.status(chatId); return; }
-      if (raw.startsWith('/doctor')) { await handlers.doctor(chatId); return; }
-      if (raw.startsWith('/versiones') || raw.startsWith('/v')) { await handlers.listVersions(chatId); return; }
-      if (raw.startsWith('/stats') || raw.startsWith('/analytics')) { await handlers.analytics(chatId); return; }
-      if (raw.startsWith('/reparar')) { await handlers.repair(chatId); return; }
-      if (raw.startsWith('/undo') || raw.startsWith('/deshacer')) { await this.handleUndo(chatId); return; }
-      if (raw.startsWith('/restaurar')) { await this.handleRestore(chatId); return; }
-
-      const parsed = intent.parse(raw);
-      if (!parsed.action || parsed.action === 'unknown' || parsed.confidence < 0.5) {
-        await send(chatId, '🤔 Usa /ayuda');
+      if (raw.startsWith('/start')) { await this.showHelp(chatId); return; }
+      if (raw.startsWith('/ayuda') || raw.startsWith('/help')) { await this.showHelp(chatId); return; }
+      if (raw.startsWith('/status')) { await agents.handleStatus(chatId); return; }
+      
+      // Framework selection commands
+      const frameworks = ['html', 'nextjs', 'react', 'vue', 'astro', 'svelte'];
+      for (const fw of frameworks) {
+        if (raw === `/${fw}`) {
+          await agents.handleFramework(chatId, fw);
+          return;
+        }
+      }
+      
+      // Framework as parameter: /framework nextjs
+      if (raw.startsWith('/framework ')) {
+        const fw = raw.split(' ')[1]?.trim();
+        if (fw && frameworks.includes(fw)) {
+          await agents.handleFramework(chatId, fw);
+          return;
+        }
+        await send(chatId, `❌ Framework inválido. Opciones: ${frameworks.join(', ')}`);
         return;
       }
-
-      await this.dispatch(chatId, parsed);
+      
+      if (this.isPortfolioRequest(raw)) {
+        await agents.handleCreate(chatId, text);
+        return;
+      }
+      
+      if (this.isUpdateRequest(raw)) {
+        await agents.handleUpdate(chatId, text);
+        return;
+      }
+      
+      await this.showHelp(chatId);
+      
     } catch (error) {
       console.error('Error:', error);
       await send(chatId, '❌ Error: ' + error.message);
-    } finally {
-      pendingCommands.set(chatId, false);
     }
   },
 
-  async dispatch(chatId, intentObj) {
-    const { action, target, data } = intentObj;
-    const intentPayload = { action, target, data, confidence: intentObj.confidence };
-
-    switch (action) {
-      case 'status':
-      case 'analytics':
-      case 'help':
-      case 'edit_profile':
-      case 'add_project':
-      case 'themes':
-      case 'list_versions':
-      case 'export_menu':
-      case 'doctor':
-      case 'repair':
-        await handlers.handle(chatId, action, data);
-        break;
-      case 'undo':
-        await this.handleUndo(chatId);
-        break;
-      case 'restore_version':
-        await this.handleRestore(chatId);
-        break;
-      case 'preview':
-        const previewParsed = intent.parse(target);
-        await executor.executeAndTrack(chatId, { ...previewParsed, action: previewParsed.action }, true);
-        await send(chatId, '📝 Preview completado');
-        break;
-      case 'export':
-        const exported = exportPortfolio(data?.format || 'json');
-        await send(chatId, exported.slice(0, 4000));
-        break;
-      case 'change_branch':
-        executor.commitToGit(`kwitt: switch to ${target}`);
-        await send(chatId, `✅ Rama: ${target}`);
-        break;
-      default:
-        saveToHistory(chatId, intentPayload);
-        const result = await executor.executeAndTrack(chatId, intentPayload, false);
-        await send(chatId, result.success ? `✅ ${action} completado` : `❌ Error: ${result.stderr || 'Unknown'}`);
-    }
+  isPortfolioRequest(text) {
+    const patterns = [
+      'crea', 'quiero', 'hazme', 'nuevo portafolio', 'crear portafolio',
+      'genera', 'build', 'make a portfolio', 'create portfolio'
+    ];
+    return patterns.some(p => text.startsWith(p) || text.includes(p + ' '));
   },
 
-  async handleUndo(chatId) {
-    const history = getHistory(chatId);
-    if (history.length === 0) { await send(chatId, '❌ No hay comandos para deshacer'); return; }
-    const lastCmd = history[0].intent;
-    await send(chatId, `⏪ Deshaciendo: ${lastCmd.action}...`);
-    await executor.executeAndTrack(chatId, { action: 'restore_version', target: '', data: {} }, false);
-    commandHistory.set(chatId, history.slice(1));
-    await send(chatId, '✅ Comando deshecho');
+  isUpdateRequest(text) {
+    const patterns = [
+      'cambia', 'actualiza', 'modifica', 'agrega', 'elimina', 'cambiar',
+      'update', 'change', 'add', 'modify', 'cambia el tema', 'agrega proyecto'
+    ];
+    return patterns.some(p => text.startsWith(p) || text.includes(p + ' '));
   },
 
-  async handleRestore(chatId) {
-    portfolio.restoreLatest();
-    await send(chatId, '✅ Restaurado a la última versión');
+  async showHelp(chatId) {
+    const help = `🤖 *Kwitt 2.0* - Portfolio con IA
+
+*Comandos:*
+• /start - Iniciar
+• /status - Estado
+• /framework [opcion] - Seleccionar framework
+
+*Frameworks disponibles:*
+• /html - HTML simple
+• /nextjs - Next.js ⚛️
+• /react - React ⚛️
+• /vue - Vue 💚
+• /astro - Astro 🚀
+• /svelte - Svelte 🔥
+
+*Crear portafolio:*
+• "crea un portafolio para dev fullstack"
+• "quiero un portafolio oscuro"
+
+*Actualizar:*
+• "agrega proyecto github.com/user/repo"
+• "cambia el tema a claro"
+
+¿En qué te ayudo?`;
+    await send(chatId, help);
   },
 
   async handleCallback(chatId, callbackData) {
-    const toggleActions = ['toggle_darkmode', 'toggle_animations'];
-    if (toggleActions.includes(callbackData)) {
-      const action = callbackData;
-      const intentPayload = { action, target: '', data: { value: true }, confidence: 1.0 };
-      await executor.executeAndTrack(chatId, intentPayload, false);
-      await handlers.status(chatId);
-      return;
-    }
-
-    if (callbackData.startsWith('template_')) {
-      const template = callbackData.replace('template_', '');
-      const intentPayload = { action: 'apply_template', target: '', data: { template }, confidence: 1.0 };
-      await executor.executeAndTrack(chatId, intentPayload, false);
-      await handlers.status(chatId);
-      return;
-    }
-
-    if (callbackData.startsWith('model_')) {
-      const modelKey = callbackData.replace('model_', '');
-      await handlers.setModel(chatId, modelKey);
-      return;
-    }
-
-    if (callbackData === 'back_main') {
-      await handlers.status(chatId);
-      return;
-    }
-
-    await handlers.handle(chatId, callbackData, {});
+    await agents.handleCallback(chatId, callbackData);
   }
 };

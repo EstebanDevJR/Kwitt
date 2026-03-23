@@ -1,168 +1,95 @@
-# Kwitt Architecture
+# Kwitt Architecture v2.0
 
-## 🎯 Current Architecture: Modular Bot + CLI Execution
-
-Kwitt uses a **modular Telegram bot** with optional CLI-driven code execution via OpenCode.
+## 🎯 Arquitectura: Agentes AI con LangGraph
 
 ```
-┌─────────────────────────────────────────┐
-│         Telegram Bot                     │
-│   (Receives user input)                  │
-└─────────────────┬───────────────────────┘
-                  │
-┌─────────────────▼───────────────────────┐
-│         Intent Parser                    │
-│   (Parses intent - AI or pattern match)  │
-└─────────────────┬───────────────────────┘
-                  │
-┌─────────────────▼───────────────────────┐
-│         Message Router                    │
-│   (Routes to handlers or CLI executor)    │
-└─────────────────┬───────────────────────┘
-                  │
-         ┌────────┴────────┐
-         │                 │
-    ┌────▼────┐      ┌─────▼──────┐
-    │Actions │      │CLI Executor│
-    │Handler │      │(OpenCode)   │
-    └────┬────┘      └─────┬──────┘
-         │                 │
-    ┌────▼────┐      ┌─────▼──────┐
-    │Data     │      │Git Commit  │
-    │Portfolio│      │& Push      │
-    └─────────┘      └────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Telegram Bot (Node.js)                           │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │ handlers/agents.js                                           │    │
+│  └────────────────────┬───────────────────────────────────────────┘  │
+└──────────────────────┼──────────────────────────────────────────────┘
+                       │ HTTP
+                       ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│               Agents Service (Python + LangGraph)                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
+│  │ Intake       │──│ Creative     │──│ Deploy       │               │
+│  │ (parsea)     │  │ (OpenCode)   │  │ (Git+Vercel) │               │
+│  └──────────────┘  └──────────────┘  └──────────────┘               │
+│         │                 │                 │                         │
+│  ┌──────▼──────────────────▼──────────────────▼──────┐              │
+│  │              Monitor (Auto-repair)                   │              │
+│  └────────────────────────────────────────────────────┘              │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-## 🔥 Execution Modes
-
-### Local Mode (`LOCAL_MODE=true`)
-- Bot executes changes directly without CLI
-- Fast, no external dependencies
-- Uses `data/portfolio.js` for all operations
-
-### CLI Mode (default)
-- Bot routes intent to OpenCode CLI for code changes
-- Enables complex frontend modifications
-- Uses `cli/executor.js` to run `opencode run`
-
-## Intent → Action Mapping
-
-| User says | Intent | Action |
-|-----------|--------|--------|
-| "agrega proyecto github.com/user/repo" | add_project | Execute via CLI or add directly |
-| "mi bio es soy desarrollador" | update_bio | Update portfolio.bio |
-| "me llamo Juan" | update_name | Update portfolio.profile.name |
-| "tema dark" | apply_template | Apply dark theme |
-| "undo" | undo | Restore latest backup |
-| "stats" | analytics | Show command statistics |
-
-## 📁 Project Structure
+## Estructura del Proyecto
 
 ```
 kwitt/
-├── bot/                    # Telegram Bot
+├── bot/                    # Telegram Bot (Node.js)
 │   ├── src/
-│   │   ├── index.js        # Entry point (~80 lines)
-│   │   ├── config.js       # Configuration & constants
-│   │   ├── data/           # Data layer
-│   │   │   └── portfolio.js    # Portfolio CRUD, versions, analytics
-│   │   ├── parsers/        # Intent parsing
-│   │   │   └── intent.js       # AI + pattern matching
-│   │   ├── handlers/       # Action handlers
-│   │   │   ├── actions.js      # Status, help, themes, export...
-│   │   │   └── message.js     # Message router & callbacks
-│   │   ├── cli/           # CLI execution
-│   │   │   └── executor.js    # runOpenCode, commitToGit
-│   │   └── keyboards/     # Inline keyboards
-│   │       └── index.js
-│   └── tests/             # Jest tests
-├── frontend/              # Next.js app
-│   └── src/
-│       └── app/
-│           ├── page.tsx       # Glassmorphism portfolio
-│           └── globals.css   # GSAP animations
-├── data/                  # Portfolio data
-│   ├── portfolio.json
-│   ├── analytics.json
-│   └── versions/          # Auto-backups
-└── infra/                 # Docker configs
+│   │   ├── index.js        # Entry point
+│   │   ├── config.js       # Configuración
+│   │   └── handlers/
+│   │       ├── agents.js   # Integración con agentes
+│   │       └── message.js  # Router
+│   └── Dockerfile
+├── agents/                 # Python LangGraph agents
+│   ├── src/
+│   │   ├── agents/
+│   │   │   ├── state.py        # AgentState + PortfolioSpec
+│   │   │   ├── intake.py       # Parser de prompts
+│   │   │   ├── creative.py     # Orquestador OpenCode
+│   │   │   ├── deploy.py       # GitHub + Vercel
+│   │   │   └── monitor.py      # Auto-repair
+│   │   ├── orchestrator.py     # Workflow LangGraph
+│   │   ├── server.py           # FastAPI REST
+│   │   └── tools/
+│   │       └── job_storage.py  # Persistencia
+│   ├── requirements.txt
+│   └── Dockerfile
+├── frontend/              # Next.js 14 portfolio
+├── skills/                # OpenCode skills (GSAP)
+├── infra/                 # Docker configs
+│   └── docker-compose.yml
+└── data/                  # Portfolio data
 ```
 
-## 🧩 Module Responsibilities
+## Flujo de Usuario
 
-### `config.js`
-- Environment variables parsing
-- Templates (minimal, developer, creative, dark, light)
-- Command aliases
-- Default portfolio structure
+1. Usuario envía: *"Crea un portafolio para dev fullstack"*
+2. **Bot** detecta request → `/portfolio/create`
+3. **Intake** → LLM estructura → JSON PortfolioSpec
+4. **Creative** → OpenCode crea archivos
+5. **Monitor** → Si error, reintenta automáticamente
+6. **Deploy** → GitHub repo + Vercel deploy → URL
 
-### `data/portfolio.js`
-- `portfolio.load()` / `portfolio.save()`
-- Version snapshots
-- Analytics tracking
-- Export (JSON/Markdown/HTML)
+## Variables de Entorno
 
-### `parsers/intent.js`
-- Sanitize input
-- Apply aliases
-- Parse intent (AI or fallback to patterns)
+| Variable | Requerido | Descripción |
+|----------|-----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | ✅ | De @BotFather |
+| `TELEGRAM_CHAT_ID` | ❌ | Restringir acceso |
+| `GITHUB_TOKEN` | ✅* | Para auto-deploy |
+| `VERCEL_API_TOKEN` | ✅* | Para auto-deploy |
+| `AGENTS_ENABLED` | ❌ | Default: true |
+| `OPENCODE_MODEL` | ❌ | Default: minimax-m2.5-free |
 
-### `handlers/actions.js`
-- Status, help, themes, export handlers
-- Callback query handling
-- Doctor diagnostics
+*Solo requerido para auto-deploy
 
-### `handlers/message.js`
-- Authorization & rate limiting
-- Command routing
-- Undo/restore logic
-
-### `cli/executor.js`
-- runOpenCode with retry logic
-- commitToGit automation
-- Local mode fallback
-
-## 🛠️ Safe Execution Layer
-
-Features:
-- **Timeout control** (default 120s via `CLI_TIMEOUT`)
-- **Dry-run mode**: Preview without applying
-- **Retry logic**: 2 retries on failure
-- **Rate limiting**: Prevents command spam
-
-## 📊 Data Model
-
-```json
-{
-  "profile": {
-    "name": "string",
-    "bio": "string",
-    "contact": { "email": "string", "github": "string", "twitter": "string" },
-    "avatar": "string"
-  },
-  "projects": [{
-    "id": "string",
-    "name": "string",
-    "description": "string",
-    "url": "string",
-    "githubUrl": "string",
-    "tags": ["string"],
-    "order": "number"
-  }],
-  "theme": { "colors": {}, "fonts": {}, "layout": {} },
-  "settings": { "animations": "boolean", "darkMode": "boolean" }
-}
-```
-
-## 🚀 Running
+## Comandos
 
 ```bash
-# Bot only
-cd bot && npm run dev
+# Docker (recomendado)
+make docker-up
+make docker-down
 
-# Frontend
-cd frontend && npm run dev
+# Desarrollo
+make install
+make dev
 
-# Docker
-docker-compose up -d
+# Limpiar
+make clean
 ```
