@@ -5,23 +5,34 @@ An intelligent portfolio management system controlled via Telegram using natural
 ## 🌟 Features
 
 - **Telegram Bot Control**: Manage your portfolio with natural language commands
-- **AI-Powered Intent Detection**: Automatically understands your requests using GPT-4o
+- **AI-Powered Intent Detection**: Automatically understands your requests using GPT-4o (or falls back to pattern matching)
 - **Automated Git Workflow**: Commits and pushes changes automatically
-- **Modern Frontend**: Next.js 14 with stunning GSAP animations
-- **Multi-Agent Architecture**: Specialized agents collaborate for complex tasks
+- **Modern Frontend**: Next.js 14 with stunning GSAP animations and glassmorphism design
+- **Modular Architecture**: Clean separation of concerns (parsers, handlers, data layer, CLI executor)
 - **Docker Ready**: Full containerization with docker-compose
 
 ## 🏗️ Architecture
 
 ```
 kwitt/
-├── agents/        # AI agents (Orchestrator, Intent, Portfolio, Code, Git, etc.)
-├── tools/         # Tool system (Filesystem, Git, Telegram, LLM)
-├── backend/       # REST API with Fastify
-├── frontend/      # Next.js 14 portfolio with GSAP animations
-├── bot/           # Telegram bot with polling
-├── core/          # Shared types and constants
-└── infra/        # Docker and deployment configs
+├── bot/                # Telegram bot (modular architecture)
+│   └── src/
+│       ├── index.js       # Entry point (~80 lines)
+│       ├── config.js      # Configuration & constants
+│       ├── data/          # Data layer
+│       │   └── portfolio.js
+│       ├── parsers/       # Intent parsing
+│       │   └── intent.js
+│       ├── handlers/      # Action handlers & router
+│       │   ├── actions.js
+│       │   └── message.js
+│       ├── cli/           # CLI executor
+│       │   └── executor.js
+│       └── keyboards/     # Inline keyboards
+│           └── index.js
+├── frontend/           # Next.js 14 portfolio with GSAP
+├── data/              # Portfolio data & versions
+└── infra/             # Docker configs
 ```
 
 ## 🚀 Quick Start
@@ -31,7 +42,7 @@ kwitt/
 - Node.js 20+
 - Docker & Docker Compose (optional)
 - Telegram Bot Token (from @BotFather)
-- OpenAI API Key (for AI intent parsing)
+- OpenAI API Key (optional - bot works without it)
 
 ### Local Development
 
@@ -40,26 +51,15 @@ kwitt/
 git clone https://github.com/EstebanDevJR/Kwitt.git
 cd Kwitt
 
-# 2. Install dependencies (Windows)
-scripts\setup.bat
+# 2. Install dependencies
+cd bot && npm install
+cd ../frontend && npm install
 
-# Or manually:
-cd backend && npm install && cd ..
-cd frontend && npm install && cd ..
-cd bot && npm install && cd ..
-
-# 3. Copy and configure environment
+# 3. Configure environment
 copy .env.example .env
 # Edit .env with your credentials
 
-# 4. Start services (3 terminals)
-# Terminal 1: Backend
-cd backend && npm run dev
-
-# Terminal 2: Frontend
-cd frontend && npm run dev
-
-# Terminal 3: Bot
+# 4. Start the bot
 cd bot && npm run dev
 ```
 
@@ -68,84 +68,66 @@ cd bot && npm run dev
 ```bash
 # Configure .env first
 copy .env.example .env
-# Edit with your TELEGRAM_BOT_TOKEN, OPENAI_API_KEY, etc.
 
 # Start all services
 docker-compose -f infra/docker-compose.yml up -d
 
 # View logs
 docker-compose -f infra/docker-compose.yml logs -f
-
-# Stop
-docker-compose -f infra/docker-compose.yml down
 ```
 
 ## 📖 Commands
 
 Send these to your Telegram bot:
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `/start` | Start the bot | `/start` |
-| `/ayuda` | Show help | `/ayuda` |
-| `/estado` | View portfolio status | `/estado` |
-| `/bio [text]` | Update bio | `/bio Full stack developer` |
-| `agrega proyecto [url]` | Add GitHub project | `agrega proyecto https://github.com/user/repo` |
-| `actualiza mi bio [text]` | Update bio | `actualiza mi bio Passionate developer` |
-| `elimina [project]` | Delete project | `elimina my-project` |
-| `hazlo más moderno` | Add GSAP animations | `hazlo más moderno` |
-| `mi email es [email]` | Update email | `mi email es me@example.com` |
-| `mi twitter es @user` | Update Twitter | `mi twitter es @username` |
+| Command | Description |
+|---------|-------------|
+| `/start` | Start the bot |
+| `/ayuda` | Show help |
+| `/estado` | View portfolio status |
+| `me llamo [nombre]` | Set your name |
+| `mi bio es [texto]` | Set your bio |
+| `agrega proyecto [url]` | Add GitHub project |
+| `elimina [proyecto]` | Delete project |
+| `tema dark/light` | Change theme |
+| `mi email es [email]` | Update email |
+| `mi twitter es @user` | Update Twitter |
+| `undo` | Undo last change |
+| `versiones` | View backups |
+| `restaurar` | Restore latest backup |
+| `doctor` | Run diagnostics |
+| `stats` | View analytics |
+
+### Aliases
+
+| Shortcut | Command |
+|----------|---------|
+| `/s` | `/estado` |
+| `/a [url]` | `agrega proyecto [url]` |
+| `/b [texto]` | `actualiza mi bio [texto]` |
+| `/d [nombre]` | `elimina proyecto [nombre]` |
 
 ## 🛠️ Tech Stack
 
-- **Backend**: Fastify, Node.js
+- **Bot**: Node.js, Telegram Bot API, Fastify (webhook mode)
 - **Frontend**: Next.js 14, Tailwind CSS 3.4, GSAP 3.12
-- **AI**: OpenAI GPT-4o
-- **Bot**: Telegram Bot API
+- **AI**: OpenAI GPT-4o (optional)
 - **DevOps**: Docker, Docker Compose
 
 ## 🌐 API Endpoints
 
-```
-GET    /api/portfolio           - Get full portfolio
-GET    /api/portfolio/profile   - Get profile
-PUT    /api/portfolio/profile   - Update profile
-GET    /api/portfolio/projects  - List projects
-POST   /api/portfolio/projects  - Create project
-PUT    /api/portfolio/projects/:id - Update project
-DELETE /api/portfolio/projects/:id - Delete project
-GET    /health                  - Health check
-```
-
-## 📁 Project Structure
+When using webhook mode:
 
 ```
-kwitt/
-├── agents/           # AI agents
-│   ├── orchestrator.ts    # Main coordinator
-│   ├── intent.ts          # Intent parsing
-│   ├── portfolio.ts       # Portfolio management
-│   ├── git.ts            # Git operations
-│   ├── frontend.ts       # Frontend modifications
-│   ├── code.ts          # Code editing
-│   ├── telegram.ts      # Telegram integration
-│   └── devops.ts       # DevOps tasks
-├── tools/            # Tool system
-│   ├── filesystem.ts
-│   ├── git.ts
-│   ├── telegram.ts
-│   └── llm.ts
-├── backend/          # Fastify API (port 3001)
-├── frontend/        # Next.js app (port 3000)
-├── bot/             # Telegram bot
-├── infra/           # Docker configs
-└── portfolio.json   # Your portfolio data
+GET  /health          - Health check
+GET  /api/portfolio   - Get portfolio
+GET  /api/analytics   - Get analytics
+POST /webhook         - Telegram webhook
 ```
 
 ## 🤖 Running without AI
 
-If you don't have an OpenAI key, the bot will use simple pattern matching:
+The bot works without OpenAI - it uses pattern matching:
 
 ```env
 # In .env - leave OPENAI_API_KEY empty
@@ -159,26 +141,22 @@ Required in `.env`:
 ```env
 # Telegram (get from @BotFather)
 TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
 
-# OpenAI (get from platform.openai.com)
+# Optional - restrict to specific users
+TELEGRAM_CHAT_ID=123456789
+
+# Optional - for AI intent parsing
 OPENAI_API_KEY=sk-...
 
 # Optional - for Git automation
 GITHUB_TOKEN=ghp_...
-GITHUB_REPO=https://github.com/user/repo.git
-```
+GIT_BRANCH=main
 
-## 🔧 Make Commands (Linux/Mac)
+# Optional - run commands locally instead of via CLI
+LOCAL_MODE=true
 
-```bash
-make install      # Install all dependencies
-make dev          # Start all services
-make backend      # Start backend only
-make frontend     # Start frontend only
-make bot          # Start bot only
-make docker-up    # Start with Docker
-make docker-down  # Stop Docker
+# Optional - webhook mode
+WEBHOOK_URL=https://your-domain.com/webhook
 ```
 
 ## 📄 License

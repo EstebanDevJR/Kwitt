@@ -1,8 +1,8 @@
 # Kwitt Architecture
 
-## 🧠 CLI-Driven System (Refactored)
+## 🎯 Current Architecture: Modular Bot + CLI Execution
 
-Kwitt now uses a **CLI-driven approach** where agents are **decision-makers**, NOT executors. All code changes go through **OpenCode CLI**.
+Kwitt uses a **modular Telegram bot** with optional CLI-driven code execution via OpenCode.
 
 ```
 ┌─────────────────────────────────────────┐
@@ -11,94 +11,124 @@ Kwitt now uses a **CLI-driven approach** where agents are **decision-makers**, N
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
-│         Orchestrator Agent               │
-│   (Routes tasks to CLI Agent)            │
+│         Intent Parser                    │
+│   (Parses intent - AI or pattern match)  │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
-│         Intent Agent                     │
-│   (Parses intent → CLI instruction)      │
+│         Message Router                    │
+│   (Routes to handlers or CLI executor)    │
 └─────────────────┬───────────────────────┘
                   │
-┌─────────────────▼───────────────────────┐
-│         CLI Agent                        │
-│   (Executes OpenCode CLI)                │
-└─────────────────┬───────────────────────┘
-                  │
-┌─────────────────▼───────────────────────┐
-│         CLI Runner (core)                │
-│   (Safe execution, timeout, logging)     │
-└─────────────────┬───────────────────────┘
-                  │
-         opencode run "<instruction>"
-                  │
-┌─────────────────▼───────────────────────┐
-│         Git Agent                        │
-│   (Commit & Push changes)                │
-└─────────────────────────────────────────┘
+         ┌────────┴────────┐
+         │                 │
+    ┌────▼────┐      ┌─────▼──────┐
+    │Actions │      │CLI Executor│
+    │Handler │      │(OpenCode)   │
+    └────┬────┘      └─────┬──────┘
+         │                 │
+    ┌────▼────┐      ┌─────▼──────┐
+    │Data     │      │Git Commit  │
+    │Portfolio│      │& Push      │
+    └─────────┘      └────────────┘
 ```
 
-## 🔥 Core Principle
+## 🔥 Execution Modes
 
-**Agents become decision-makers, NOT executors.**
+### Local Mode (`LOCAL_MODE=true`)
+- Bot executes changes directly without CLI
+- Fast, no external dependencies
+- Uses `data/portfolio.js` for all operations
 
-All code changes must go through CLI execution (OpenCode or similar).
+### CLI Mode (default)
+- Bot routes intent to OpenCode CLI for code changes
+- Enables complex frontend modifications
+- Uses `cli/executor.js` to run `opencode run`
 
-## Intent → Instruction Mapping
+## Intent → Action Mapping
 
-| User says | Intent | CLI Instruction for OpenCode |
-|-----------|--------|------------------------------|
-| "agrega proyecto github.com/user/repo" | add_project | "Add a new project to portfolio from GitHub repository. Extract name, description, and tags. Update frontend accordingly." |
-| "actualiza mi bio a soy desarrollador" | update_bio | "Update the portfolio bio to: 'soy desarrollador'. Save to portfolio.json." |
-| "hazlo más moderno" | enhance_frontend | "Enhance the frontend with modern animations. Add GSAP scroll animations to the hero and project cards." |
+| User says | Intent | Action |
+|-----------|--------|--------|
+| "agrega proyecto github.com/user/repo" | add_project | Execute via CLI or add directly |
+| "mi bio es soy desarrollador" | update_bio | Update portfolio.bio |
+| "me llamo Juan" | update_name | Update portfolio.profile.name |
+| "tema dark" | apply_template | Apply dark theme |
+| "undo" | undo | Restore latest backup |
+| "stats" | analytics | Show command statistics |
 
 ## 📁 Project Structure
 
 ```
 kwitt/
-├── agents/              # Agent system (decision-makers only)
-│   ├── orchestrator.ts  # Routes tasks to CLI Agent
-│   ├── intent.ts        # Parses user intent
-│   ├── cli_agent.ts     # Executes OpenCode CLI
-│   ├── git.ts          # Git operations
-│   ├── telegram.ts     # Telegram wrapper
-│   └── index.ts
-├── core/                # Core utilities
-│   ├── cli_runner.ts   # Safe CLI execution layer
-│   ├── types.ts       # TypeScript types
-│   └── constants.ts
-├── tools/               # External tools
-│   ├── llm.ts         # OpenAI integration
-│   ├── git.ts         # Git tool
-│   ├── telegram.ts    # Telegram tool
-│   └── filesystem.ts # Filesystem tool
-├── backend/            # REST API
-├── frontend/           # Next.js app
-├── bot/                # Telegram Bot
-└── infra/              # Docker configs
+├── bot/                    # Telegram Bot
+│   ├── src/
+│   │   ├── index.js        # Entry point (~80 lines)
+│   │   ├── config.js       # Configuration & constants
+│   │   ├── data/           # Data layer
+│   │   │   └── portfolio.js    # Portfolio CRUD, versions, analytics
+│   │   ├── parsers/        # Intent parsing
+│   │   │   └── intent.js       # AI + pattern matching
+│   │   ├── handlers/       # Action handlers
+│   │   │   ├── actions.js      # Status, help, themes, export...
+│   │   │   └── message.js     # Message router & callbacks
+│   │   ├── cli/           # CLI execution
+│   │   │   └── executor.js    # runOpenCode, commitToGit
+│   │   └── keyboards/     # Inline keyboards
+│   │       └── index.js
+│   └── tests/             # Jest tests
+├── frontend/              # Next.js app
+│   └── src/
+│       └── app/
+│           ├── page.tsx       # Glassmorphism portfolio
+│           └── globals.css   # GSAP animations
+├── data/                  # Portfolio data
+│   ├── portfolio.json
+│   ├── analytics.json
+│   └── versions/          # Auto-backups
+└── infra/                 # Docker configs
 ```
 
-## 🛠️ Safe Execution Layer (cli_runner.ts)
+## 🧩 Module Responsibilities
+
+### `config.js`
+- Environment variables parsing
+- Templates (minimal, developer, creative, dark, light)
+- Command aliases
+- Default portfolio structure
+
+### `data/portfolio.js`
+- `portfolio.load()` / `portfolio.save()`
+- Version snapshots
+- Analytics tracking
+- Export (JSON/Markdown/HTML)
+
+### `parsers/intent.js`
+- Sanitize input
+- Apply aliases
+- Parse intent (AI or fallback to patterns)
+
+### `handlers/actions.js`
+- Status, help, themes, export handlers
+- Callback query handling
+- Doctor diagnostics
+
+### `handlers/message.js`
+- Authorization & rate limiting
+- Command routing
+- Undo/restore logic
+
+### `cli/executor.js`
+- runOpenCode with retry logic
+- commitToGit automation
+- Local mode fallback
+
+## 🛠️ Safe Execution Layer
 
 Features:
-- **Timeout control** (default 120s)
-- **Dry-run mode**: `opencode run --dry-run "<instruction>"`
-- **Logging**: All commands logged to `./logs/`
-- **Error handling**: Captures stdout/stderr
-
-## 🚀 Deployment
-
-### Development
-```bash
-npm run dev:backend   # Puerto 3001
-npm run dev:frontend  # Puerto 3000
-npm run dev:bot       # Telegram Bot
-```
-
-### Docker
-```bash
-docker-compose up -d
-```
+- **Timeout control** (default 120s via `CLI_TIMEOUT`)
+- **Dry-run mode**: Preview without applying
+- **Retry logic**: 2 retries on failure
+- **Rate limiting**: Prevents command spam
 
 ## 📊 Data Model
 
@@ -106,19 +136,33 @@ docker-compose up -d
 {
   "profile": {
     "name": "string",
-    "bio": "string", 
-    "contact": {
-      "email": "string",
-      "github": "string",
-      "twitter": "string"
-    }
+    "bio": "string",
+    "contact": { "email": "string", "github": "string", "twitter": "string" },
+    "avatar": "string"
   },
   "projects": [{
     "id": "string",
     "name": "string",
     "description": "string",
     "url": "string",
-    "tags": ["string"]
-  }]
+    "githubUrl": "string",
+    "tags": ["string"],
+    "order": "number"
+  }],
+  "theme": { "colors": {}, "fonts": {}, "layout": {} },
+  "settings": { "animations": "boolean", "darkMode": "boolean" }
 }
+```
+
+## 🚀 Running
+
+```bash
+# Bot only
+cd bot && npm run dev
+
+# Frontend
+cd frontend && npm run dev
+
+# Docker
+docker-compose up -d
 ```
