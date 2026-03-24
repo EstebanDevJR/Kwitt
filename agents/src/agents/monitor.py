@@ -78,13 +78,12 @@ def retry_node(state: AgentState) -> AgentState:
         return state
     
     workspace = os.getenv("WORKSPACE", "/app/workspace")
-    model = os.getenv("OPENCODE_MODEL", "minimax-m2.5-free")
-    
-    # Add error context to prompt
+    timeout = int(os.getenv("OPENCODE_TIMEOUT", "300"))
+
     error_context = f"\n\nError previo: {', '.join(state.errors)}\nPor favor corrige estos errores."
     prompt = state.user_prompt + error_context
-    
-    result = run_opencode(prompt, workspace, model)
+
+    result = run_opencode(prompt, workspace, timeout)
     state.opencode_result = result
     
     if result["success"]:

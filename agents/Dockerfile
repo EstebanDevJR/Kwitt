@@ -8,8 +8,11 @@ RUN apt-get update && apt-get install -y \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install OpenCode
-RUN curl -fsSL https://opencode.ai/install | bash && \
+RUN curl -fsSL https://opencode.ai/install -o /tmp/install.sh && \
+    head -c 100 /tmp/install.sh | grep -q "bin/bash" && \
+    chmod +x /tmp/install.sh && \
+    bash /tmp/install.sh && \
+    rm /tmp/install.sh && \
     mv /root/.opencode/bin/opencode /usr/local/bin/ && \
     chmod +x /usr/local/bin/opencode
 

@@ -1,8 +1,9 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
+from pathlib import Path
 import os
 import uuid
 import json
@@ -10,19 +11,26 @@ import logging
 from .orchestrator import run_portfolio_workflow_stream
 from .agents.state import AgentState, PortfolioSpec
 from .tools.job_storage import save_job, load_job, list_jobs as get_job_list, delete_job
+from .middleware.auth import AuthMiddleware, validate_job_id, get_allowed_origins
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Kwitt Agents API", version="2.0.0")
 
+allowed_origins = get_allowed_origins()
+if not allowed_origins:
+    allowed_origins = []
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=allowed_origins if allowed_origins else [],
+    allow_credentials=bool(allowed_origins),
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
+
+app.add_middleware(AuthMiddleware)
 
 
 async def send_telegram_message(chat_id: int, text: str, token: str):
@@ -70,17 +78,26 @@ STATUS_MESSAGES = {
     "pending": "⏳ Iniciando...",
     "intake": "📝 Analizando tu solicitud...",
     "creative": "🎨 Creando tu portafolio...",
-    "deploy": "🚀 Desplegando a GitHub y Vercel...",
+    "deploy": "🚀 Desplegando a GitHub...",
     "monitor": "🔧 Verificando errores...",
+    "updating": "✏️ Actualizando portafolio...",
     "success": "✅ ¡Completado!",
     "failed": "❌ Error"
 }
 
 
 class PortfolioRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(..., min_length=1, max_length=5000)
     spec: Optional[PortfolioSpec] = None
     user_id: Optional[str] = None
+    chat_id: Optional[int] = None
+    telegram_token: Optional[str] = None
+    github_url: Optional[str] = None
+
+
+class UpdateRequest(BaseModel):
+    prompt: str
+    github_url: Optional[str] = None
     chat_id: Optional[int] = None
     telegram_token: Optional[str] = None
 
@@ -252,49 +269,13 @@ async def create_portfolio_stream(request: PortfolioRequest):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-@app.post("/portfolio/update", response_model=WorkflowStatus)
-async def update_portfolio(request: PortfolioRequest):
-    """Actualiza un portafolio existente"""
-    
-    missing = validate_config()
-    if missing:
-        raise HTTPException(400, f"Configuración faltante: {', '.join(missing)}")
-    
-    job_id = str(uuid.uuid4())
-    logger.info(f"[{job_id}] Starting portfolio update: {request.prompt[:50]}...")
-    
-    try:
-        from .agents.creative import creative_graph
-        from .agents.monitor import monitor_graph
-        
-        initial_state = AgentState(user_prompt=request.prompt)
-        
-        save_job(job_id, {"status": "running", "state": initial_state.to_dict()})
-        
-        result = creative_graph.invoke(initial_state)
-        result = monitor_graph.invoke(result)
-        
-        save_job(job_id, {"status": result.status, "state": result.to_dict()})
-        
-        return WorkflowStatus(
-            job_id=job_id,
-            status=result.status,
-            message=result.message,
-            final_url=result.final_url,
-            github_url=result.github_url,
-            errors=result.errors
-        )
-        
-    except Exception as e:
-        logger.error(f"[{job_id}] Error: {e}")
-        save_job(job_id, {"status": "failed", "error": str(e)})
-        raise HTTPException(500, f"Error actualizando portafolio: {str(e)}")
-
-
 @app.get("/portfolio/status/{job_id}", response_model=WorkflowStatus)
 async def get_status(job_id: str):
     """Obtiene el estado de un job"""
-    
+
+    if not validate_job_id(job_id):
+        raise HTTPException(400, "Job ID inválido")
+
     job = load_job(job_id)
     if not job:
         raise HTTPException(404, "Job no encontrado")
@@ -324,6 +305,8 @@ async def list_jobs():
 @app.delete("/portfolio/jobs/{job_id}")
 async def remove_job(job_id: str):
     """Elimina un job"""
+    if not validate_job_id(job_id):
+        raise HTTPException(400, "Job ID inválido")
     job = load_job(job_id)
     if not job:
         raise HTTPException(404, "Job no encontrado")
@@ -334,6 +317,10 @@ async def remove_job(job_id: str):
 @app.post("/portfolio/continue/{job_id}")
 async def continue_portfolio(job_id: str, framework: str, chat_id: int = None, telegram_token: str = None):
     """Continúa un job que espera selección de framework"""
+
+    if not validate_job_id(job_id):
+        raise HTTPException(400, "Job ID inválido")
+
     job = load_job(job_id)
     if not job:
         raise HTTPException(404, "Job no encontrado")
@@ -438,7 +425,10 @@ async def download_portfolio(job_id: str):
     import zipfile
     import io
     from fastapi.responses import StreamingResponse
-    
+
+    if not validate_job_id(job_id):
+        raise HTTPException(400, "Job ID inválido")
+
     job = load_job(job_id)
     if not job:
         raise HTTPException(404, "Job no encontrado")
@@ -472,6 +462,10 @@ async def download_portfolio(job_id: str):
 @app.get("/portfolio/files/{job_id}")
 async def list_portfolio_files(job_id: str):
     """Lista los archivos del portafolio"""
+
+    if not validate_job_id(job_id):
+        raise HTTPException(400, "Job ID inválido")
+
     job = load_job(job_id)
     if not job:
         raise HTTPException(404, "Job no encontrado")
@@ -494,18 +488,106 @@ async def list_portfolio_files(job_id: str):
 async def preview_portfolio(job_id: str, path: str = "index.html"):
     """Sirve un archivo del portafolio para preview"""
     from fastapi.responses import FileResponse
-    
+
+    if not validate_job_id(job_id):
+        raise HTTPException(400, "Job ID inválido")
+
     job = load_job(job_id)
     if not job:
         raise HTTPException(404, "Job no encontrado")
-    
-    workspace = os.getenv("WORKSPACE", "/app/workspace")
-    file_path = Path(workspace) / path
-    
-    if not file_path.exists():
+
+    workspace = Path(os.getenv("WORKSPACE", "/app/workspace")).resolve()
+    requested_path = (workspace / path).resolve()
+
+    if not str(requested_path).startswith(str(workspace)):
+        raise HTTPException(400, "Ruta inválida - path traversal detectado")
+
+    if not requested_path.exists():
         raise HTTPException(404, f"Archivo no encontrado: {path}")
+
+    return FileResponse(path=str(requested_path))
+
+
+@app.post("/portfolio/update", response_model=WorkflowStatus)
+async def update_portfolio(request: UpdateRequest):
+    """Actualiza un portafolio existente en GitHub"""
+    import re
+    logger.info(f"[UpdateEndpoint] Request: prompt={request.prompt[:30]}, github_url={request.github_url}")
     
-    return FileResponse(path=str(file_path))
+    if not os.getenv("GITHUB_TOKEN"):
+        raise HTTPException(400, "GITHUB_TOKEN no configurado")
+    
+    github_url = request.github_url
+    if not github_url:
+        github_match = re.search(r'https?://github\.com/[\w-]+/[\w.-]+(?:\.git)?', request.prompt, re.IGNORECASE)
+        if github_match:
+            github_url = github_match.group(0).rstrip('.git')
+    
+    if not github_url:
+        raise HTTPException(400, "URL de GitHub no proporcionada. Inclúyela en el prompt o en github_url.")
+    
+    job_id = str(uuid.uuid4())
+    logger.info(f"[{job_id}] Updating portfolio from: {github_url}")
+    
+    if request.chat_id and request.telegram_token:
+        await send_telegram_message(
+            request.chat_id,
+            f"✏️ *Actualizando portafolio*\n\nCambios: {request.prompt[:100]}...",
+            request.telegram_token
+        )
+    
+    try:
+        from .agents.update import update_node as do_update
+        logger.info(f"[UpdateEndpoint] Calling update_node, function: {do_update}")
+        
+        initial_state = AgentState(
+            user_prompt=request.prompt,
+            github_url=github_url,
+            status="updating"
+        )
+        logger.info(f"[UpdateEndpoint] Created state with github_url={github_url}")
+        save_job(job_id, {"status": "updating", "state": initial_state.to_dict()})
+        
+        logger.info(f"[UpdateEndpoint] Before calling do_update")
+        result = do_update(initial_state)
+        logger.info(f"[UpdateEndpoint] After calling do_update, result type: {type(result)}")
+        save_job(job_id, {"status": result.status, "state": result.to_dict()})
+        
+        if request.chat_id and request.telegram_token:
+            if result.status == "success":
+                await send_telegram_message(
+                    request.chat_id,
+                    f"✅ *¡Portafolio actualizado!*\n\n🔗 {result.github_url}\n\nCambios aplicados: {request.prompt[:100]}",
+                    request.telegram_token
+                )
+            else:
+                error_msg = result.message
+                await send_telegram_message(
+                    request.chat_id,
+                    f"❌ *Error en actualización*\n\n{error_msg}",
+                    request.telegram_token
+                )
+        
+        return WorkflowStatus(
+            job_id=job_id,
+            status=result.status,
+            message=result.message,
+            github_url=result.github_url,
+            errors=result.errors
+        )
+        
+    except Exception as e:
+        logger.error(f"[{job_id}] Update error: {e}")
+        save_job(job_id, {"status": "failed", "error": str(e)})
+        
+        if request.chat_id and request.telegram_token:
+            await send_telegram_message(
+                request.chat_id,
+                f"❌ *Error:* {str(e)}",
+                request.telegram_token
+            )
+        
+        raise HTTPException(500, f"Error actualizando portafolio: {str(e)}")
 
 
 @app.post("/telegram/webhook")
