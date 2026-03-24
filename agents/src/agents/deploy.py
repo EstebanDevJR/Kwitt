@@ -190,28 +190,13 @@ def deploy_node(state: AgentState) -> AgentState:
     import logging
     logger = logging.getLogger(__name__)
     
-    deploy_enabled = os.getenv("DEPLOY_ENABLED", "true").lower() == "true"
-    
-    if not deploy_enabled:
-        state.status = "deploy"
-        state.message = "Deploy opcional deshabilitado. Los archivos están en el workspace."
-        state.files_created = []
-        logger.info("[Deploy] Deploy disabled, skipping")
-        return state
-    
     github_token = os.getenv("GITHUB_TOKEN")
     vercel_token = os.getenv("VERCEL_API_TOKEN")
     
     if not github_token:
-        state.errors.append("GITHUB_TOKEN no configurado")
-        state.status = "failed"
-        state.message = "Configura GITHUB_TOKEN en las variables de entorno, o usa DEPLOY_ENABLED=false"
-        return state
-    
-    if not vercel_token:
-        state.errors.append("VERCEL_API_TOKEN no configurado")
-        state.status = "failed"
-        state.message = "Configura VERCEL_API_TOKEN en las variables de entorno, o usa DEPLOY_ENABLED=false"
+        state.status = "deploy"
+        state.message = "GITHUB_TOKEN no configurado. Los archivos están en el workspace."
+        logger.info("[Deploy] GitHub token not configured, skipping")
         return state
     
     workspace = os.getenv("WORKSPACE", "/app/workspace")
@@ -221,7 +206,6 @@ def deploy_node(state: AgentState) -> AgentState:
     project_name = repo_name.replace("-", "")[:50]
     
     github = GitHubClient(github_token)
-    vercel = VercelClient(vercel_token)
     
     try:
         user = github.get_user()
@@ -254,7 +238,7 @@ def deploy_node(state: AgentState) -> AgentState:
         files_to_push = {}
         workspace_path = Path(workspace)
         for file_path in workspace_path.rglob("*"):
-            if file_path.is_file() and not file_path.name.startswith('.'):
+            if file_path.is_file() and not file_path.name.startswith('.') and not str(file_path).startswith(str(workspace_path / ".next")):
                 try:
                     content = file_path.read_text(encoding='utf-8')
                     rel_path = file_path.relative_to(workspace_path)
@@ -266,32 +250,36 @@ def deploy_node(state: AgentState) -> AgentState:
             push_result = github.push_files(owner, repo_name, files_to_push, "Initial portfolio")
             if push_result.get("success"):
                 state.github_url = f"https://github.com/{owner}/{repo_name}"
-        
-        # Deploy to Vercel
-        full_repo = f"{owner}/{repo_name}"
-        deploy_result = vercel.deploy(project_name, full_repo)
-        
-        if deploy_result and "url" in deploy_result:
-            state.vercel_url = f"https://{deploy_result['url']}"
-            state.final_url = state.vercel_url
-        elif deploy_result and "id" in deploy_result:
-            # Wait for deployment
-            import time
-            for _ in range(30):
-                time.sleep(2)
-                status = vercel.get_deployment_status(deploy_result["id"])
-                if status and status.get("state") == "READY":
-                    state.vercel_url = f"https://{status.get('url', project_name)}"
-                    state.final_url = state.vercel_url
-                    break
+                logger.info(f"[Deploy] Files pushed to {repo_name}")
         
         state.status = "deploy"
         
-        if state.final_url:
-            state.message = f"Portafolio desplegado: {state.final_url}"
+        # Deploy to Vercel if token is available
+        if vercel_token:
+            vercel = VercelClient(vercel_token)
+            full_repo = f"{owner}/{repo_name}"
+            deploy_result = vercel.deploy(project_name, full_repo)
+            
+            if deploy_result and "url" in deploy_result:
+                state.vercel_url = f"https://{deploy_result['url']}"
+                state.final_url = state.vercel_url
+            elif deploy_result and "id" in deploy_result:
+                import time
+                for _ in range(30):
+                    time.sleep(2)
+                    status = vercel.get_deployment_status(deploy_result["id"])
+                    if status and status.get("state") == "READY":
+                        state.vercel_url = f"https://{status.get('url', project_name)}"
+                        state.final_url = state.vercel_url
+                        break
+            
+            if state.final_url:
+                state.message = f"Portafolio desplegado: {state.final_url}"
+            else:
+                state.message = f"Repo creado: {state.github_url}"
         else:
-            state.message = f"Repo creado: {state.github_url} (deploy manual requerido)"
-            state.errors.append("Vercel deployment pendiente")
+            state.message = f"Repo creado: {state.github_url}"
+            state.final_url = state.github_url
             
     except Exception as e:
         state.errors.append(f"Deploy error: {str(e)}")

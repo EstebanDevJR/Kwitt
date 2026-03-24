@@ -96,15 +96,9 @@ class WorkflowStatus(BaseModel):
 
 def validate_config():
     """Valida configuración requerida"""
-    deploy_enabled = os.getenv("DEPLOY_ENABLED", "true").lower() == "true"
-    if not deploy_enabled:
-        return []  # No config needed if deploy disabled
-    
     missing = []
-    if not os.getenv("GITHUB_TOKEN"):
-        missing.append("GITHUB_TOKEN")
-    if not os.getenv("VERCEL_API_TOKEN"):
-        missing.append("VERCEL_API_TOKEN")
+    if not os.getenv("OPENAI_API_KEY"):
+        missing.append("OPENAI_API_KEY")
     return missing
 
 
@@ -374,36 +368,59 @@ async def continue_portfolio(job_id: str, framework: str, chat_id: int = None, t
         )
     
     try:
-        from .agents.creative import creative_graph
+        from .agents.creative import creative_node
+        from .agents.deploy import deploy_node
         from .orchestrator import get_state_from_result
         
-        result_raw = creative_graph.invoke(state)
-        result = get_state_from_result(result_raw)
+        # Step 1: Run creative (create portfolio files)
+        creative_state = creative_node(state)
+        save_job(job_id, {"status": creative_state.status, "state": creative_state.to_dict()})
         
-        if result is None:
-            raise ValueError("Could not extract state from result")
+        if chat_id and telegram_token:
+            if creative_state.status == "creative":
+                await send_telegram_message(chat_id, f"✅ Portafolio creado! Subiendo a GitHub...", telegram_token)
+            else:
+                await send_telegram_message(chat_id, f"❌ Error: {creative_state.message}", telegram_token)
+                return WorkflowStatus(
+                    job_id=job_id,
+                    status=creative_state.status,
+                    message=creative_state.message,
+                    errors=creative_state.errors
+                )
         
-        save_job(job_id, {"status": result.status, "state": result.to_dict()})
+        # Step 2: Run deploy (push to GitHub if token is set)
+        deploy_state = deploy_node(creative_state)
+        save_job(job_id, {"status": deploy_state.status, "state": deploy_state.to_dict()})
         
-        if result.status == "creative":
-            files = result.files_created
-            message = f"✅ *Portafolio creado con {framework.upper()}!*\n\n{len(files)} archivos creados"
-            if chat_id and telegram_token:
-                await send_telegram_message(chat_id, message, telegram_token)
-            
-            return WorkflowStatus(
-                job_id=job_id,
-                status="creative",
-                message=f"Portafolio creado con {framework}",
-                errors=result.errors
-            )
-        else:
-            return WorkflowStatus(
-                job_id=job_id,
-                status=result.status,
-                message=result.message,
-                errors=result.errors
-            )
+        # Send final notification
+        if chat_id and telegram_token:
+            if deploy_state.final_url:
+                await send_telegram_message(
+                    chat_id,
+                    f"✅ *¡Portafolio listo!*\n\n🔗 {deploy_state.final_url}\n📁 {deploy_state.github_url}",
+                    telegram_token
+                )
+            elif deploy_state.github_url:
+                await send_telegram_message(
+                    chat_id,
+                    f"✅ *Portafolio creado!*\n\n📁 Repo: {deploy_state.github_url}\n\nCompárteme los archivos si necesitas descargarlos.",
+                    telegram_token
+                )
+            else:
+                await send_telegram_message(
+                    chat_id,
+                    f"⚠️ *Portafolio creado pero sin deploy*\n\n{deploy_state.message}",
+                    telegram_token
+                )
+        
+        return WorkflowStatus(
+            job_id=job_id,
+            status=deploy_state.status,
+            message=deploy_state.message,
+            final_url=deploy_state.final_url,
+            github_url=deploy_state.github_url,
+            errors=deploy_state.errors
+        )
             
     except Exception as e:
         logger.error(f"[{job_id}] Error continuing: {e}")
